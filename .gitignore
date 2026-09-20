@@ -1,0 +1,5 @@
+.build/
+Vendor/TranscribeCpp.xcframework/
+Vendor/TranscribeCpp.xcframework.zip
+dist/
+*.wav
