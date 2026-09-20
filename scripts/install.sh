@@ -6,7 +6,8 @@ SRC="$ROOT/dist/Dictate.app"
 DEST="$HOME/Applications/Dictate.app"
 LABEL="cc.stanleywang.dictate"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
-[ -d "$SRC" ] || { echo "run scripts/build-app.sh first" >&2; exit 1; }
+[ "${1:-}" = "--no-build" ] || "$ROOT/scripts/build-app.sh"
+[ -d "$SRC" ] || { echo "missing $SRC" >&2; exit 1; }
 mkdir -p "$HOME/Applications"
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 pkill -f "$DEST/Contents/MacOS/dictate" 2>/dev/null || true

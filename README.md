@@ -40,6 +40,8 @@ Both grants are keyed to the `dictate-dev` signature, so rebuilds keep them.
 - `modifiers` maps a modifier held while the transcript is delivered to an
   action: `paste`, `copy` (clipboard only) or `send` (paste, then Return).
   Default `{"shift": "copy", "option": "send"}`; `command` is also accepted.
+  Hold the modifier while pressing the stop key, or any time before the text
+  lands; the hotkey still matches with a delivery modifier held.
   `restoreClipboard: false` leaves the transcript on the clipboard after
   pasting. `casing` is `model` (as transcribed), `lower` (everything
   lowercase; dictionary terms keep their casing) or `sentence` (first letter

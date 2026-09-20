@@ -18,6 +18,8 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let mute = OutputMute()
     /// Index of the hotkey that started the current recording.
     private var activeHotkey = 0
+    /// Modifiers held when the recording was stopped.
+    private var stopFlags: CGEventFlags = []
     private var pressedAt: Date?
 
     init(config: Config) {
@@ -83,6 +85,10 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Read on the tap's thread; `state` is only written on main, and a
             // stale read here costs at most one Escape passing through.
             self?.state == .recording
+        }
+        l.toleratedModifiers = { [weak self] in
+            guard let self, self.state == .recording else { return [] }
+            return self.config.deliveryModifierFlags
         }
         do {
             try l.start()
@@ -203,6 +209,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let seconds = recorder.duration
         let pcm = recorder.stop()
         mute.release()
+        stopFlags = listener?.lastFlags ?? []
         if seconds < config.minimumSeconds {
             state = .idle
             setIcon("○")
@@ -227,7 +234,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             var text = config.postProcess(raw)
             if text.isEmpty { return }
             if config.trailingSpace { text += " " }
-            let held = CGEventSource.flagsState(.combinedSessionState).union(listener?.lastFlags ?? [])
+            let held = CGEventSource.flagsState(.combinedSessionState).union(listener?.lastFlags ?? []).union(stopFlags)
             switch config.delivery(for: held) {
             case .paste:
                 Paster.paste(text, restoreClipboard: config.restoreClipboard)

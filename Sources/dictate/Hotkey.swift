@@ -74,6 +74,9 @@ final class HotkeyListener {
     /// Asked on every Escape press; when true the key is consumed and reported
     /// as `.escape` instead of reaching the frontmost app.
     var capturesEscape: () -> Bool = { false }
+    /// Extra modifier flags to ignore when matching a hotkey, asked per event.
+    /// Lets a delivery modifier be held while the stop key is pressed.
+    var toleratedModifiers: () -> CGEventFlags = { [] }
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     /// Modifier flags on the last key event the tap saw, i.e. what apps see
@@ -147,7 +150,7 @@ final class HotkeyListener {
             }
 
             guard let key = hotkey.keyCode, code == key,
-                  hotkey.modifiersMatch(event.flags) || (type == .keyUp && keyDown[i])
+                  hotkey.modifiersMatch(event.flags.subtracting(toleratedModifiers())) || (type == .keyUp && keyDown[i])
             else { continue }
             switch type {
             case .keyDown:
