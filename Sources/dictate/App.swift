@@ -241,12 +241,12 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let held = CGEventSource.flagsState(.combinedSessionState).union(listener?.lastFlags ?? []).union(stopFlags)
             switch config.delivery(for: held) {
             case .paste:
-                Paster.paste(text, restoreClipboard: config.restoreClipboard)
+                Paster.paste(text, restoreClipboard: config.restoreClipboard, restoreAfter: config.restoreClipboardAfterSeconds)
             case .copy:
                 Paster.copy(text)
                 log("copied")
             case .send:
-                Paster.paste(text, restoreClipboard: config.restoreClipboard, thenReturn: true)
+                Paster.paste(text, restoreClipboard: config.restoreClipboard, restoreAfter: config.restoreClipboardAfterSeconds, thenReturn: true)
                 log("sent")
             }
         case .failure(let error):

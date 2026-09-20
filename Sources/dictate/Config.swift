@@ -28,6 +28,9 @@ struct Config: Codable {
     var modifiers: [String: Delivery] = ["shift": .copy, "option": .send]
     /// Put the previous clipboard back after pasting.
     var restoreClipboard: Bool = true
+    /// How long the transcript stays on the clipboard before the previous
+    /// contents come back. Raise it so a clipboard history manager records it.
+    var restoreClipboardAfterSeconds: Double = 0.25
     /// "model" keeps the model's casing, "lower" lowercases everything
     /// (dictionary terms keep theirs), "sentence" only uppercases the first letter.
     var casing: Casing = .model
@@ -113,6 +116,7 @@ struct Config: Codable {
         soundPack = try c.decodeIfPresent(SoundPack.self, forKey: .soundPack) ?? d.soundPack
         modifiers = try c.decodeIfPresent([String: Delivery].self, forKey: .modifiers) ?? d.modifiers
         restoreClipboard = try c.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? d.restoreClipboard
+        restoreClipboardAfterSeconds = try c.decodeIfPresent(Double.self, forKey: .restoreClipboardAfterSeconds) ?? d.restoreClipboardAfterSeconds
         casing = try c.decodeIfPresent(Casing.self, forKey: .casing) ?? d.casing
         muteSpeakersWhileRecording = try c.decodeIfPresent(Bool.self, forKey: .muteSpeakersWhileRecording) ?? d.muteSpeakersWhileRecording
         indicator = try c.decodeIfPresent(Bool.self, forKey: .indicator) ?? d.indicator

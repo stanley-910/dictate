@@ -43,7 +43,8 @@ Both grants are keyed to the `dictate-dev` signature, so rebuilds keep them.
   Hold the modifier while pressing the stop key, or any time before the text
   lands; the hotkey still matches with a delivery modifier held.
   `restoreClipboard: false` leaves the transcript on the clipboard after
-  pasting. `casing` is `model` (as transcribed), `lower` (everything
+  pasting; with it on, `restoreClipboardAfterSeconds` (0.25) is how long the
+  transcript stays there first, so a clipboard history manager can catch it. `casing` is `model` (as transcribed), `lower` (everything
   lowercase; dictionary terms keep their casing) or `sentence` (first letter
   uppercased).
 - `muteSpeakersWhileRecording: true` mutes the speakers for the recording so

@@ -5,7 +5,7 @@ import Foundation
 /// Inserts text at the cursor by writing it to the pasteboard, sending Cmd-V,
 /// then restoring whatever was on the pasteboard before.
 enum Paster {
-    static func paste(_ text: String, restoreClipboard: Bool = true, thenReturn: Bool = false) {
+    static func paste(_ text: String, restoreClipboard: Bool = true, restoreAfter: TimeInterval = 0.25, thenReturn: Bool = false) {
         let pb = NSPasteboard.general
         let saved = restoreClipboard ? snapshot(pb) : []
         pb.clearContents()
@@ -18,8 +18,9 @@ enum Paster {
         }
 
         guard restoreClipboard else { return }
-        // Give the target app time to read the pasteboard before restoring.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+        // Give the target app (and any clipboard history manager) time to
+        // read the pasteboard before restoring.
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(restoreAfter, 0.1)) {
             restore(pb, saved)
         }
     }
