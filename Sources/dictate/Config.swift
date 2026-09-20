@@ -35,6 +35,11 @@ struct Config: Codable {
     var muteSpeakersWhileRecording: Bool = false
     /// Show the floating waveform pill while recording.
     var indicator: Bool = true
+    /// Where the indicator sits: bottom, top, top-left, top-right, bottom-left,
+    /// bottom-right. Dragging it overrides this until the value changes.
+    var indicatorPosition: IndicatorPosition = .bottom
+    /// Gap between the indicator and the screen edge, in points.
+    var indicatorMargin: Double = 14
     /// Add a trailing space after pasted text.
     var trailingSpace: Bool = false
     /// Cancel recordings shorter than this (seconds) instead of transcribing.
@@ -60,6 +65,11 @@ struct Config: Codable {
 
     enum Delivery: String, Codable { case paste, copy, send }
     enum Casing: String, Codable { case model, lower, sentence }
+    enum IndicatorPosition: String, Codable {
+        case bottom, top
+        case topLeft = "top-left", topRight = "top-right"
+        case bottomLeft = "bottom-left", bottomRight = "bottom-right"
+    }
 
     /// Flags for every modifier named in `modifiers`.
     var deliveryModifierFlags: CGEventFlags {
@@ -106,6 +116,8 @@ struct Config: Codable {
         casing = try c.decodeIfPresent(Casing.self, forKey: .casing) ?? d.casing
         muteSpeakersWhileRecording = try c.decodeIfPresent(Bool.self, forKey: .muteSpeakersWhileRecording) ?? d.muteSpeakersWhileRecording
         indicator = try c.decodeIfPresent(Bool.self, forKey: .indicator) ?? d.indicator
+        indicatorPosition = try c.decodeIfPresent(IndicatorPosition.self, forKey: .indicatorPosition) ?? d.indicatorPosition
+        indicatorMargin = try c.decodeIfPresent(Double.self, forKey: .indicatorMargin) ?? d.indicatorMargin
         trailingSpace = try c.decodeIfPresent(Bool.self, forKey: .trailingSpace) ?? d.trailingSpace
         minimumSeconds = try c.decodeIfPresent(Double.self, forKey: .minimumSeconds) ?? d.minimumSeconds
         maximumSeconds = try c.decodeIfPresent(Double.self, forKey: .maximumSeconds) ?? d.maximumSeconds

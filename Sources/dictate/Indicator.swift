@@ -1,14 +1,22 @@
 import AppKit
 
-/// Floating pill above the Dock: a status dot and a scrolling waveform of
-/// the live input level. Click-through, on every Space, never takes focus.
+/// Floating pill: a status dot and a scrolling waveform of the live input
+/// level. Draggable, on every Space, never takes focus.
 final class Indicator {
     enum Mode { case recording, armed, transcribing }
 
     private let panel: NSPanel
     private let wave = WaveView()
     private var timer: Timer?
+    private var placing = false
     private static let size = NSSize(width: 220, height: 44)
+    private static let originKey = "indicatorOrigin"
+
+    /// Anchor used when the pill has not been dragged.
+    var position: Config.IndicatorPosition = .bottom {
+        didSet { if position != oldValue { Indicator.savedOrigin = nil } }
+    }
+    var margin: CGFloat = 14
 
     init() {
         let p = NSPanel(
@@ -18,7 +26,8 @@ final class Indicator {
         p.isOpaque = false
         p.backgroundColor = .clear
         p.hasShadow = true
-        p.ignoresMouseEvents = true
+        p.ignoresMouseEvents = false
+        p.isMovableByWindowBackground = true
         p.hidesOnDeactivate = false
         p.isFloatingPanel = true
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
@@ -36,6 +45,22 @@ final class Indicator {
         blur.addSubview(wave)
         p.contentView = blur
         panel = p
+        NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: p, queue: .main) { [weak self] _ in
+            guard let self, !self.placing, self.panel.alphaValue > 0 else { return }
+            Indicator.savedOrigin = self.panel.frame.origin
+        }
+    }
+
+    /// Origin left by the last drag, if any.
+    private static var savedOrigin: NSPoint? {
+        get {
+            guard let a = UserDefaults.standard.array(forKey: originKey) as? [Double], a.count == 2 else { return nil }
+            return NSPoint(x: a[0], y: a[1])
+        }
+        set {
+            if let p = newValue { UserDefaults.standard.set([p.x, p.y], forKey: originKey) }
+            else { UserDefaults.standard.removeObject(forKey: originKey) }
+        }
     }
 
     var mode: Mode = .recording {
@@ -72,14 +97,31 @@ final class Indicator {
         })
     }
 
-    /// Bottom-center of the screen under the pointer, just above the Dock.
+    /// The dragged spot if it is still on some screen, else the configured
+    /// anchor on the screen under the pointer.
     private func place() {
+        placing = true
+        defer { placing = false }
+        if let saved = Indicator.savedOrigin,
+           NSScreen.screens.contains(where: { $0.visibleFrame.insetBy(dx: -Indicator.size.width / 2, dy: 0).contains(saved) }) {
+            panel.setFrameOrigin(saved)
+            return
+        }
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         guard let screen else { return }
         let f = screen.visibleFrame
-        let origin = NSPoint(x: f.midX - Indicator.size.width / 2, y: f.minY + 14)
-        panel.setFrameOrigin(origin)
+        let w = Indicator.size.width, h = Indicator.size.height, m = margin
+        let x: CGFloat, y: CGFloat
+        switch position {
+        case .bottom:      x = f.midX - w / 2;  y = f.minY + m
+        case .top:         x = f.midX - w / 2;  y = f.maxY - h - m
+        case .topLeft:     x = f.minX + m;      y = f.maxY - h - m
+        case .topRight:    x = f.maxX - w - m;  y = f.maxY - h - m
+        case .bottomLeft:  x = f.minX + m;      y = f.minY + m
+        case .bottomRight: x = f.maxX - w - m;  y = f.minY + m
+        }
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 }
 

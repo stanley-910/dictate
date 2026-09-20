@@ -48,6 +48,10 @@ Both grants are keyed to the `dictate-dev` signature, so rebuilds keep them.
   uppercased).
 - `muteSpeakersWhileRecording: true` mutes the speakers for the recording so
   music or a call does not reach the mic, and restores them after.
+- `indicatorPosition` anchors the waveform pill: `bottom` (default), `top`,
+  `top-left`, `top-right`, `bottom-left` or `bottom-right`, `indicatorMargin`
+  points from the edge. Drag the pill to put it anywhere; the dragged spot
+  sticks until `indicatorPosition` changes.
 - The menu bar item has Copy Config Path for opening the file in an editor.
 - `sounds: false` silences everything; `soundPack` names a sound per event
   (`start`, `stop`, `cancel`, `arm`), each a name from /System/Library/Sounds

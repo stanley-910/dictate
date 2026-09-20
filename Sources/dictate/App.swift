@@ -150,7 +150,11 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         state = .recording
         transcriber.preload()
         setIcon("●", color: .systemRed)
-        if config.indicator { indicator.show(.recording) }
+        if config.indicator {
+            indicator.position = config.indicatorPosition
+            indicator.margin = config.indicatorMargin
+            indicator.show(.recording)
+        }
         if config.sounds { Sounds.play(config.soundPack.start) }
         if config.muteSpeakersWhileRecording { mute.engage() }
         maxTimer?.invalidate()
