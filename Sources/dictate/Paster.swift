@@ -5,13 +5,17 @@ import Foundation
 /// Inserts text at the cursor by writing it to the pasteboard, sending Cmd-V,
 /// then restoring whatever was on the pasteboard before.
 enum Paster {
-    static func paste(_ text: String, restoreClipboard: Bool = true) {
+    static func paste(_ text: String, restoreClipboard: Bool = true, thenReturn: Bool = false) {
         let pb = NSPasteboard.general
         let saved = restoreClipboard ? snapshot(pb) : []
         pb.clearContents()
         pb.setString(text, forType: .string)
 
-        sendCommandV()
+        sendKey(kVK_ANSI_V, flags: .maskCommand)
+        if thenReturn {
+            // Let the paste land before submitting.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { sendKey(kVK_Return, flags: []) }
+        }
 
         guard restoreClipboard else { return }
         // Give the target app time to read the pasteboard before restoring.
@@ -27,14 +31,14 @@ enum Paster {
         pb.setString(text, forType: .string)
     }
 
-    private static func sendCommandV() {
+    private static func sendKey(_ code: Int, flags: CGEventFlags) {
         let src = CGEventSource(stateID: .combinedSessionState)
-        let v = CGKeyCode(kVK_ANSI_V)
+        let v = CGKeyCode(code)
         guard let down = CGEvent(keyboardEventSource: src, virtualKey: v, keyDown: true),
               let up = CGEvent(keyboardEventSource: src, virtualKey: v, keyDown: false)
         else { return }
-        down.flags = .maskCommand
-        up.flags = .maskCommand
+        down.flags = flags
+        up.flags = flags
         down.post(tap: .cgSessionEventTap)
         up.post(tap: .cgSessionEventTap)
     }

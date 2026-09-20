@@ -227,11 +227,15 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             var text = config.postProcess(raw)
             if text.isEmpty { return }
             if config.trailingSpace { text += " " }
-            if config.copyOnShift, NSEvent.modifierFlags.contains(.shift) {
-                Paster.copy(text)
-                log("copied (shift held)")
-            } else {
+            switch config.delivery(for: NSEvent.modifierFlags) {
+            case .paste:
                 Paster.paste(text, restoreClipboard: config.restoreClipboard)
+            case .copy:
+                Paster.copy(text)
+                log("copied")
+            case .send:
+                Paster.paste(text, restoreClipboard: config.restoreClipboard, thenReturn: true)
+                log("sent")
             }
         case .failure(let error):
             log("transcribe failed: \(error)")

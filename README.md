@@ -37,10 +37,11 @@ Both grants are keyed to the `dictate-dev` signature, so rebuilds keep them.
 - `mode: "hold"` records only while the key is held. `holdHotkey` adds a
   second key that is always push-to-talk, e.g. `"right_command"` or `"fn"`,
   alongside the toggle key.
-- Hold Shift while the transcript is being delivered to copy it to the
-  clipboard instead of pasting (`copyOnShift`). `restoreClipboard: false`
-  leaves the transcript on the clipboard after pasting. `capitalize: true`
-  uppercases the first letter.
+- `modifiers` maps a modifier held while the transcript is delivered to an
+  action: `paste`, `copy` (clipboard only) or `send` (paste, then Return).
+  Default `{"shift": "copy", "option": "send"}`; `command` is also accepted.
+  `restoreClipboard: false` leaves the transcript on the clipboard after
+  pasting. `capitalize: true` uppercases the first letter.
 - `muteWhileRecording: true` mutes system output for the recording and
   restores it after.
 - `sounds: false` silences everything; `soundPack` names a sound per event

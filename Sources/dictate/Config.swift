@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// User configuration, read from ~/.config/dictate/config.json.
@@ -22,8 +23,9 @@ struct Config: Codable {
     var sounds: Bool = true
     /// Sound names from /System/Library/Sounds (without extension) or file paths.
     var soundPack: SoundPack = SoundPack()
-    /// Hold Shift while the transcript is being delivered to copy it instead of pasting.
-    var copyOnShift: Bool = true
+    /// Action per modifier held while the transcript is delivered:
+    /// "paste", "copy" (clipboard only) or "send" (paste, then Return).
+    var modifiers: [String: Delivery] = ["shift": .copy, "option": .send]
     /// Put the previous clipboard back after pasting.
     var restoreClipboard: Bool = true
     /// Uppercase the first letter of the transcript.
@@ -55,6 +57,17 @@ struct Config: Codable {
         var arm: String? = "Morse"
     }
 
+    enum Delivery: String, Codable { case paste, copy, send }
+
+    /// Delivery chosen by the modifiers currently held; `paste` when none match.
+    func delivery(for flags: NSEvent.ModifierFlags) -> Delivery {
+        let held: [(String, NSEvent.ModifierFlags)] = [("shift", .shift), ("option", .option), ("command", .command)]
+        for (name, flag) in held where flags.contains(flag) {
+            if let d = modifiers[name] { return d }
+        }
+        return .paste
+    }
+
     struct Replacement: Codable {
         var from: String
         var to: String
@@ -77,7 +90,7 @@ struct Config: Codable {
         microphone = try c.decodeIfPresent(String.self, forKey: .microphone)
         sounds = try c.decodeIfPresent(Bool.self, forKey: .sounds) ?? d.sounds
         soundPack = try c.decodeIfPresent(SoundPack.self, forKey: .soundPack) ?? d.soundPack
-        copyOnShift = try c.decodeIfPresent(Bool.self, forKey: .copyOnShift) ?? d.copyOnShift
+        modifiers = try c.decodeIfPresent([String: Delivery].self, forKey: .modifiers) ?? d.modifiers
         restoreClipboard = try c.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? d.restoreClipboard
         capitalize = try c.decodeIfPresent(Bool.self, forKey: .capitalize) ?? d.capitalize
         muteWhileRecording = try c.decodeIfPresent(Bool.self, forKey: .muteWhileRecording) ?? d.muteWhileRecording
