@@ -253,6 +253,10 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: UI
 
+    @objc private func copyConfigPath() {
+        Paster.copy(Config.path.path)
+    }
+
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         let menu = NSMenu()
@@ -263,6 +267,10 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         micMenu.delegate = self
         micItem.submenu = micMenu
         menu.addItem(micItem)
+        menu.addItem(NSMenuItem.separator())
+        let copyPath = NSMenuItem(title: "Copy Config Path", action: #selector(copyConfigPath), keyEquivalent: "")
+        copyPath.target = self
+        menu.addItem(copyPath)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
