@@ -76,6 +76,9 @@ final class HotkeyListener {
     var capturesEscape: () -> Bool = { false }
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    /// Modifier flags on the last key event the tap saw, i.e. what apps see
+    /// after Karabiner and friends have remapped.
+    private(set) var lastFlags: CGEventFlags = []
     private var loneModifierDown: [Bool]
     private var keyDown: [Bool]
 
@@ -122,6 +125,7 @@ final class HotkeyListener {
             return Unmanaged.passUnretained(event)
         }
         let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+        lastFlags = event.flags
 
         if code == CGKeyCode(kVK_Escape), type == .keyDown || type == .keyUp {
             guard capturesEscape() else { return Unmanaged.passUnretained(event) }

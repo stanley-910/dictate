@@ -28,10 +28,11 @@ struct Config: Codable {
     var modifiers: [String: Delivery] = ["shift": .copy, "option": .send]
     /// Put the previous clipboard back after pasting.
     var restoreClipboard: Bool = true
-    /// Uppercase the first letter of the transcript.
-    var capitalize: Bool = false
-    /// Mute system output while recording; restored afterwards.
-    var muteWhileRecording: Bool = false
+    /// "model" keeps the model's casing, "lower" lowercases everything
+    /// (dictionary terms keep theirs), "sentence" only uppercases the first letter.
+    var casing: Casing = .model
+    /// Mute the speakers while recording so playback stays out of the mic; restored afterwards.
+    var muteSpeakersWhileRecording: Bool = false
     /// Show the floating waveform pill while recording.
     var indicator: Bool = true
     /// Add a trailing space after pasted text.
@@ -58,6 +59,7 @@ struct Config: Codable {
     }
 
     enum Delivery: String, Codable { case paste, copy, send }
+    enum Casing: String, Codable { case model, lower, sentence }
 
     /// Delivery chosen by the modifiers currently held; `paste` when none match.
     func delivery(for flags: CGEventFlags) -> Delivery {
@@ -92,8 +94,8 @@ struct Config: Codable {
         soundPack = try c.decodeIfPresent(SoundPack.self, forKey: .soundPack) ?? d.soundPack
         modifiers = try c.decodeIfPresent([String: Delivery].self, forKey: .modifiers) ?? d.modifiers
         restoreClipboard = try c.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? d.restoreClipboard
-        capitalize = try c.decodeIfPresent(Bool.self, forKey: .capitalize) ?? d.capitalize
-        muteWhileRecording = try c.decodeIfPresent(Bool.self, forKey: .muteWhileRecording) ?? d.muteWhileRecording
+        casing = try c.decodeIfPresent(Casing.self, forKey: .casing) ?? d.casing
+        muteSpeakersWhileRecording = try c.decodeIfPresent(Bool.self, forKey: .muteSpeakersWhileRecording) ?? d.muteSpeakersWhileRecording
         indicator = try c.decodeIfPresent(Bool.self, forKey: .indicator) ?? d.indicator
         trailingSpace = try c.decodeIfPresent(Bool.self, forKey: .trailingSpace) ?? d.trailingSpace
         minimumSeconds = try c.decodeIfPresent(Double.self, forKey: .minimumSeconds) ?? d.minimumSeconds
@@ -124,9 +126,10 @@ struct Config: Codable {
 
     /// Dictionary then replacements, in that order.
     func postProcess(_ raw: String) -> String {
-        let fixed = Dictionary.apply(raw, terms: Dictionary.terms(dictionary), threshold: dictionaryThreshold)
+        let text = casing == .lower ? raw.lowercased() : raw
+        let fixed = Dictionary.apply(text, terms: Dictionary.terms(dictionary), threshold: dictionaryThreshold)
         var out = Replacements.apply(fixed, rules: replacements)
-        if capitalize, let first = out.first, first.isLowercase {
+        if casing == .sentence, let first = out.first, first.isLowercase {
             out = first.uppercased() + out.dropFirst()
         }
         return out

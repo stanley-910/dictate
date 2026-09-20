@@ -41,9 +41,11 @@ Both grants are keyed to the `dictate-dev` signature, so rebuilds keep them.
   action: `paste`, `copy` (clipboard only) or `send` (paste, then Return).
   Default `{"shift": "copy", "option": "send"}`; `command` is also accepted.
   `restoreClipboard: false` leaves the transcript on the clipboard after
-  pasting. `capitalize: true` uppercases the first letter.
-- `muteWhileRecording: true` mutes system output for the recording and
-  restores it after.
+  pasting. `casing` is `model` (as transcribed), `lower` (everything
+  lowercase; dictionary terms keep their casing) or `sentence` (first letter
+  uppercased).
+- `muteSpeakersWhileRecording: true` mutes the speakers for the recording so
+  music or a call does not reach the mic, and restores them after.
 - `sounds: false` silences everything; `soundPack` names a sound per event
   (`start`, `stop`, `cancel`, `arm`), each a name from /System/Library/Sounds
   or a file path; `null` skips that one.

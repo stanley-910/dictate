@@ -146,7 +146,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setIcon("●", color: .systemRed)
         if config.indicator { indicator.show(.recording) }
         if config.sounds { Sounds.play(config.soundPack.start) }
-        if config.muteWhileRecording { mute.engage() }
+        if config.muteSpeakersWhileRecording { mute.engage() }
         maxTimer?.invalidate()
         maxTimer = Timer.scheduledTimer(withTimeInterval: config.maximumSeconds, repeats: false) { [weak self] _ in
             self?.stopAndTranscribe()
@@ -227,7 +227,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             var text = config.postProcess(raw)
             if text.isEmpty { return }
             if config.trailingSpace { text += " " }
-            let held = CGEventSource.flagsState(.combinedSessionState)
+            let held = CGEventSource.flagsState(.combinedSessionState).union(listener?.lastFlags ?? [])
             switch config.delivery(for: held) {
             case .paste:
                 Paster.paste(text, restoreClipboard: config.restoreClipboard)
