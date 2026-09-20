@@ -227,7 +227,8 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             var text = config.postProcess(raw)
             if text.isEmpty { return }
             if config.trailingSpace { text += " " }
-            switch config.delivery(for: NSEvent.modifierFlags) {
+            let held = CGEventSource.flagsState(.combinedSessionState)
+            switch config.delivery(for: held) {
             case .paste:
                 Paster.paste(text, restoreClipboard: config.restoreClipboard)
             case .copy:

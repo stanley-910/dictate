@@ -60,8 +60,8 @@ struct Config: Codable {
     enum Delivery: String, Codable { case paste, copy, send }
 
     /// Delivery chosen by the modifiers currently held; `paste` when none match.
-    func delivery(for flags: NSEvent.ModifierFlags) -> Delivery {
-        let held: [(String, NSEvent.ModifierFlags)] = [("shift", .shift), ("option", .option), ("command", .command)]
+    func delivery(for flags: CGEventFlags) -> Delivery {
+        let held: [(String, CGEventFlags)] = [("shift", .maskShift), ("option", .maskAlternate), ("command", .maskCommand)]
         for (name, flag) in held where flags.contains(flag) {
             if let d = modifiers[name] { return d }
         }
