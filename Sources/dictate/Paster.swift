@@ -5,18 +5,26 @@ import Foundation
 /// Inserts text at the cursor by writing it to the pasteboard, sending Cmd-V,
 /// then restoring whatever was on the pasteboard before.
 enum Paster {
-    static func paste(_ text: String) {
+    static func paste(_ text: String, restoreClipboard: Bool = true) {
         let pb = NSPasteboard.general
-        let saved = snapshot(pb)
+        let saved = restoreClipboard ? snapshot(pb) : []
         pb.clearContents()
         pb.setString(text, forType: .string)
 
         sendCommandV()
 
+        guard restoreClipboard else { return }
         // Give the target app time to read the pasteboard before restoring.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             restore(pb, saved)
         }
+    }
+
+    /// Leave the text on the clipboard without pasting.
+    static func copy(_ text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
     }
 
     private static func sendCommandV() {

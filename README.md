@@ -34,7 +34,18 @@ Both grants are keyed to the `dictate-dev` signature, so rebuilds keep them.
 - Escape while recording cancels and never reaches the frontmost app. Past
   `cancelConfirmAfterSeconds` (default 10) the first Escape only arms (dot
   turns yellow); a second within 2 s cancels. Set 0 for single-press.
-- `mode: "hold"` records only while the key is held.
+- `mode: "hold"` records only while the key is held. `holdHotkey` adds a
+  second key that is always push-to-talk, e.g. `"right_command"` or `"fn"`,
+  alongside the toggle key.
+- Hold Shift while the transcript is being delivered to copy it to the
+  clipboard instead of pasting (`copyOnShift`). `restoreClipboard: false`
+  leaves the transcript on the clipboard after pasting. `capitalize: true`
+  uppercases the first letter.
+- `muteWhileRecording: true` mutes system output for the recording and
+  restores it after.
+- `sounds: false` silences everything; `soundPack` names a sound per event
+  (`start`, `stop`, `cancel`, `arm`), each a name from /System/Library/Sounds
+  or a file path; `null` skips that one.
 - A floating pill above the Dock shows a live waveform while recording
   (`indicator: false` hides it).
 - Microphone: menu bar > Microphone. The pick is stored in app defaults;
@@ -52,7 +63,8 @@ Both grants are keyed to the `dictate-dev` signature, so rebuilds keep them.
   in order; set `"regex": true` on an entry to use a regular expression.
   Use these for rewrites that are not spelling fixes, e.g. "pie" -> "Pi".
 - Config keys that are missing take their defaults, so `{}` is valid.
-  Config is read at launch; restart the agent after editing.
+  The file is watched: edits apply within about 2 s without a restart, and
+  hotkey changes rebind. A recording in progress is never interrupted.
 
 Commands:
 

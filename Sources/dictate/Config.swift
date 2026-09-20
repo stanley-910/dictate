@@ -8,6 +8,8 @@ struct Config: Codable {
     /// "control+space", "option+space", "fn", "right_command", etc.
     var hotkey: String = "control+space"
     var mode: Mode = .toggle
+    /// Optional second hotkey that always records while held (push-to-talk).
+    var holdHotkey: String? = nil
     /// Path to the GGUF. "~" is expanded.
     var model: String = "~/.local/share/dictate/models/cohere-transcribe-03-2026-Q8_0.gguf"
     /// BCP-47 language hint passed to the model; nil = auto.
@@ -16,8 +18,18 @@ struct Config: Codable {
     var unloadAfterSeconds: Double = 300
     /// Input device UID or name. The menu bar pick overrides this; nil = system default.
     var microphone: String? = nil
-    /// Play a system sound on start/stop.
+    /// Play a sound on start/stop/cancel/arm.
     var sounds: Bool = true
+    /// Sound names from /System/Library/Sounds (without extension) or file paths.
+    var soundPack: SoundPack = SoundPack()
+    /// Hold Shift while the transcript is being delivered to copy it instead of pasting.
+    var copyOnShift: Bool = true
+    /// Put the previous clipboard back after pasting.
+    var restoreClipboard: Bool = true
+    /// Uppercase the first letter of the transcript.
+    var capitalize: Bool = false
+    /// Mute system output while recording; restored afterwards.
+    var muteWhileRecording: Bool = false
     /// Show the floating waveform pill while recording.
     var indicator: Bool = true
     /// Add a trailing space after pasted text.
@@ -36,6 +48,13 @@ struct Config: Codable {
     /// Ordered, case-insensitive whole-word replacements applied after the dictionary.
     var replacements: [Replacement] = []
 
+    struct SoundPack: Codable {
+        var start: String? = "Tink"
+        var stop: String? = "Pop"
+        var cancel: String? = "Bottle"
+        var arm: String? = "Morse"
+    }
+
     struct Replacement: Codable {
         var from: String
         var to: String
@@ -51,11 +70,17 @@ struct Config: Codable {
         let d = Config()
         hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey) ?? d.hotkey
         mode = try c.decodeIfPresent(Mode.self, forKey: .mode) ?? d.mode
+        holdHotkey = try c.decodeIfPresent(String.self, forKey: .holdHotkey)
         model = try c.decodeIfPresent(String.self, forKey: .model) ?? d.model
         language = c.contains(.language) ? try c.decode(String?.self, forKey: .language) : d.language
         unloadAfterSeconds = try c.decodeIfPresent(Double.self, forKey: .unloadAfterSeconds) ?? d.unloadAfterSeconds
         microphone = try c.decodeIfPresent(String.self, forKey: .microphone)
         sounds = try c.decodeIfPresent(Bool.self, forKey: .sounds) ?? d.sounds
+        soundPack = try c.decodeIfPresent(SoundPack.self, forKey: .soundPack) ?? d.soundPack
+        copyOnShift = try c.decodeIfPresent(Bool.self, forKey: .copyOnShift) ?? d.copyOnShift
+        restoreClipboard = try c.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? d.restoreClipboard
+        capitalize = try c.decodeIfPresent(Bool.self, forKey: .capitalize) ?? d.capitalize
+        muteWhileRecording = try c.decodeIfPresent(Bool.self, forKey: .muteWhileRecording) ?? d.muteWhileRecording
         indicator = try c.decodeIfPresent(Bool.self, forKey: .indicator) ?? d.indicator
         trailingSpace = try c.decodeIfPresent(Bool.self, forKey: .trailingSpace) ?? d.trailingSpace
         minimumSeconds = try c.decodeIfPresent(Double.self, forKey: .minimumSeconds) ?? d.minimumSeconds
@@ -87,7 +112,16 @@ struct Config: Codable {
     /// Dictionary then replacements, in that order.
     func postProcess(_ raw: String) -> String {
         let fixed = Dictionary.apply(raw, terms: Dictionary.terms(dictionary), threshold: dictionaryThreshold)
-        return Replacements.apply(fixed, rules: replacements)
+        var out = Replacements.apply(fixed, rules: replacements)
+        if capitalize, let first = out.first, first.isLowercase {
+            out = first.uppercased() + out.dropFirst()
+        }
+        return out
+    }
+
+    /// Modification time of the resolved config file, for live reload.
+    static var modified: Date? {
+        (try? FileManager.default.attributesOfItem(atPath: path.resolvingSymlinksInPath().path))?[.modificationDate] as? Date
     }
 
     var modelURL: URL {

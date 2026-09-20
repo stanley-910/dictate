@@ -5,7 +5,7 @@ import Foundation
 final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     enum State { case idle, recording, transcribing }
 
-    private let config: Config
+    private var config: Config
     private let recorder = Recorder()
     private let transcriber: Transcriber
     private let indicator = Indicator()
@@ -13,6 +13,11 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var state: State = .idle
     private var maxTimer: Timer?
+    private var reloadTimer: Timer?
+    private var configModified: Date?
+    private let mute = OutputMute()
+    /// Index of the hotkey that started the current recording.
+    private var activeHotkey = 0
     private var pressedAt: Date?
 
     init(config: Config) {
@@ -25,21 +30,53 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        guard let hotkey = Hotkey.parse(config.hotkey) else {
-            log("bad hotkey: \(config.hotkey)")
-            NSApp.terminate(nil)
-            return
-        }
         setupStatusItem()
         requestPermissions()
+        startListening()
+        configModified = Config.modified
+        reloadTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            self?.reloadIfChanged()
+        }
+    }
 
-        startListening(hotkey)
+    /// Hotkeys from config; index 0 follows `mode`, index 1 is always hold.
+    private func parsedHotkeys() -> [Hotkey]? {
+        guard let main = Hotkey.parse(config.hotkey) else {
+            log("bad hotkey: \(config.hotkey)")
+            return nil
+        }
+        var keys = [main]
+        if let spec = config.holdHotkey {
+            if let hold = Hotkey.parse(spec) { keys.append(hold) } else { log("bad holdHotkey: \(spec)") }
+        }
+        return keys
+    }
+
+    /// Re-reads the config when the file changes. Hotkeys rebind; everything
+    /// else is read at the next use. A recording in progress is left alone.
+    private func reloadIfChanged() {
+        let now = Config.modified
+        guard now != configModified, state == .idle else { return }
+        configModified = now
+        let old = config
+        config = Config.load()
+        transcriber.config = config
+        if config.modelURL != old.modelURL { transcriber.unload() }
+        recorder.onLevel = config.indicator ? { [indicator] level in indicator.push(level: level) } : nil
+        if config.hotkey != old.hotkey || config.holdHotkey != old.holdHotkey || config.mode != old.mode {
+            listener?.stop()
+            listener = nil
+            startListening()
+        } else {
+            log("config reloaded")
+        }
     }
 
     /// Installs the event tap, retrying until Accessibility is granted so the
     /// first-run flow is: launch, approve the prompt, start dictating.
-    private func startListening(_ hotkey: Hotkey) {
-        let l = HotkeyListener(hotkey: hotkey) { [weak self] event in
+    private func startListening() {
+        guard let hotkeys = parsedHotkeys() else { return }
+        let l = HotkeyListener(hotkeys: hotkeys) { [weak self] event in
             DispatchQueue.main.async { self?.handle(event) }
         }
         l.capturesEscape = { [weak self] in
@@ -55,12 +92,16 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 warnedAboutAccessibility = true
             }
             setIcon("○", color: .tertiaryLabelColor)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.startListening(hotkey) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self, self.listener == nil else { return }
+                self.startListening()
+            }
             return
         }
         listener = l
         setIcon("○")
-        log("ready: \(config.hotkey) (\(config.mode.rawValue)), model \(config.modelURL.lastPathComponent)")
+        let hold = config.holdHotkey.map { ", hold \($0)" } ?? ""
+        log("ready: \(config.hotkey) (\(config.mode.rawValue))\(hold), model \(config.modelURL.lastPathComponent)")
     }
     private var warnedAboutAccessibility = false
 
@@ -71,20 +112,24 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: hotkey state machine
 
     private func handle(_ event: HotkeyListener.Event) {
-        switch (event, config.mode, state) {
-        case (.escape, _, .recording):
-            escapePressed()
-        case (.pressed, .toggle, .idle):
-            startRecording()
-        case (.pressed, .toggle, .recording):
-            stopAndTranscribe()
-        case (.pressed, .hold, .idle):
-            pressedAt = Date()
-            startRecording()
-        case (.released, .hold, .recording):
-            stopAndTranscribe()
-        default:
-            break
+        switch event {
+        case .escape:
+            if state == .recording { escapePressed() }
+        case .pressed(let i):
+            let mode: Config.Mode = i == 0 ? config.mode : .hold
+            switch (mode, state) {
+            case (.toggle, .idle), (.hold, .idle):
+                pressedAt = Date()
+                activeHotkey = i
+                startRecording()
+            case (.toggle, .recording) where activeHotkey == i:
+                stopAndTranscribe()
+            default:
+                break
+            }
+        case .released(let i):
+            let mode: Config.Mode = i == 0 ? config.mode : .hold
+            if mode == .hold, state == .recording, activeHotkey == i { stopAndTranscribe() }
         }
     }
 
@@ -100,7 +145,8 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         transcriber.preload()
         setIcon("●", color: .systemRed)
         if config.indicator { indicator.show(.recording) }
-        if config.sounds { NSSound(named: "Tink")?.play() }
+        if config.sounds { Sounds.play(config.soundPack.start) }
+        if config.muteWhileRecording { mute.engage() }
         maxTimer?.invalidate()
         maxTimer = Timer.scheduledTimer(withTimeInterval: config.maximumSeconds, repeats: false) { [weak self] _ in
             self?.stopAndTranscribe()
@@ -123,7 +169,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         cancelArmed = true
         setIcon("●", color: .systemYellow)
         indicator.mode = .armed
-        if config.sounds { NSSound(named: "Morse")?.play() }
+        if config.sounds { Sounds.play(config.soundPack.arm) }
         cancelArmTimer?.invalidate()
         cancelArmTimer = Timer.scheduledTimer(withTimeInterval: confirmWindow, repeats: false) { [weak self] _ in
             guard let self, self.state == .recording else { return }
@@ -142,10 +188,11 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         disarmCancel()
         maxTimer?.invalidate()
         _ = recorder.stop()
+        mute.release()
         state = .idle
         setIcon("○")
         indicator.hide()
-        if config.sounds { NSSound(named: "Bottle")?.play() }
+        if config.sounds { Sounds.play(config.soundPack.cancel) }
         log("cancelled")
     }
 
@@ -155,6 +202,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         maxTimer?.invalidate()
         let seconds = recorder.duration
         let pcm = recorder.stop()
+        mute.release()
         if seconds < config.minimumSeconds {
             state = .idle
             setIcon("○")
@@ -164,7 +212,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         state = .transcribing
         setIcon("◐", color: .systemOrange)
         indicator.mode = .transcribing
-        if config.sounds { NSSound(named: "Pop")?.play() }
+        if config.sounds { Sounds.play(config.soundPack.stop) }
         transcriber.transcribe(pcm) { [weak self] result in
             DispatchQueue.main.async { self?.finish(result) }
         }
@@ -179,7 +227,12 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             var text = config.postProcess(raw)
             if text.isEmpty { return }
             if config.trailingSpace { text += " " }
-            Paster.paste(text)
+            if config.copyOnShift, NSEvent.modifierFlags.contains(.shift) {
+                Paster.copy(text)
+                log("copied (shift held)")
+            } else {
+                Paster.paste(text, restoreClipboard: config.restoreClipboard)
+            }
         case .failure(let error):
             log("transcribe failed: \(error)")
             beep()

@@ -4,7 +4,7 @@ import TranscribeCpp
 /// Owns the model. Loads lazily on first use and drops it after an idle period
 /// so the process sits at a few MB when you are not dictating.
 final class Transcriber {
-    private let config: Config
+    var config: Config
     private var model: Model?
     private var session: Session?
     private var idleTimer: Timer?

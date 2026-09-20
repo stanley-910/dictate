@@ -66,21 +66,31 @@ struct Hotkey {
 /// Requires Accessibility (an active tap can swallow the event so the
 /// hotkey does not also reach the frontmost app).
 final class HotkeyListener {
-    enum Event { case pressed, released, escape }
+    /// `pressed`/`released` carry the index into the hotkeys array.
+    enum Event { case pressed(Int), released(Int), escape }
 
-    private let hotkey: Hotkey
+    private let hotkeys: [Hotkey]
     private let handler: (Event) -> Void
     /// Asked on every Escape press; when true the key is consumed and reported
     /// as `.escape` instead of reaching the frontmost app.
     var capturesEscape: () -> Bool = { false }
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    private var loneModifierDown = false
-    private var keyDown = false
+    private var loneModifierDown: [Bool]
+    private var keyDown: [Bool]
 
-    init(hotkey: Hotkey, handler: @escaping (Event) -> Void) {
-        self.hotkey = hotkey
+    init(hotkeys: [Hotkey], handler: @escaping (Event) -> Void) {
+        self.hotkeys = hotkeys
         self.handler = handler
+        loneModifierDown = Array(repeating: false, count: hotkeys.count)
+        keyDown = Array(repeating: false, count: hotkeys.count)
+    }
+
+    func stop() {
+        if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
+        if let runLoopSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes) }
+        tap = nil
+        runLoopSource = nil
     }
 
     func start() throws {
@@ -121,33 +131,35 @@ final class HotkeyListener {
             return nil  // swallow both down and up so the app underneath never sees it
         }
 
-        if let lone = hotkey.loneModifierKeyCode {
-            guard type == .flagsChanged, code == lone else { return Unmanaged.passUnretained(event) }
-            let down = isModifierDown(code: lone, flags: event.flags)
-            if down != loneModifierDown {
-                loneModifierDown = down
-                handler(down ? .pressed : .released)
+        for (i, hotkey) in hotkeys.enumerated() {
+            if let lone = hotkey.loneModifierKeyCode {
+                guard type == .flagsChanged, code == lone else { continue }
+                let down = isModifierDown(code: lone, flags: event.flags)
+                if down != loneModifierDown[i] {
+                    loneModifierDown[i] = down
+                    handler(down ? .pressed(i) : .released(i))
+                }
+                return Unmanaged.passUnretained(event)
             }
-            return Unmanaged.passUnretained(event)
-        }
 
-        guard let key = hotkey.keyCode else { return Unmanaged.passUnretained(event) }
-        guard code == key, hotkey.modifiersMatch(event.flags) || (type == .keyUp && keyDown) else {
-            return Unmanaged.passUnretained(event)
+            guard let key = hotkey.keyCode, code == key,
+                  hotkey.modifiersMatch(event.flags) || (type == .keyUp && keyDown[i])
+            else { continue }
+            switch type {
+            case .keyDown:
+                if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return nil }
+                keyDown[i] = true
+                handler(.pressed(i))
+                return nil
+            case .keyUp:
+                keyDown[i] = false
+                handler(.released(i))
+                return nil
+            default:
+                return Unmanaged.passUnretained(event)
+            }
         }
-        switch type {
-        case .keyDown:
-            if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return nil }
-            keyDown = true
-            handler(.pressed)
-            return nil
-        case .keyUp:
-            keyDown = false
-            handler(.released)
-            return nil
-        default:
-            return Unmanaged.passUnretained(event)
-        }
+        return Unmanaged.passUnretained(event)
     }
 
     private func isModifierDown(code: CGKeyCode, flags: CGEventFlags) -> Bool {
