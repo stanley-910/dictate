@@ -176,3 +176,8 @@ Logs: `~/.local/state/dictate/dictate.log` when not started from a terminal.
 on Hugging Face, converted from Cohere's Apache-2.0 release
 ([`CohereLabs/cohere-transcribe-03-2026`](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026)).
 `fetch-model.sh` pins the revision and verifies SHA-256 for Q8_0.
+
+## License
+
+MIT, see [`LICENSE`](LICENSE). The vendored `Vendor/TranscribeCpp/` binding
+keeps its own Apache 2.0 license.
