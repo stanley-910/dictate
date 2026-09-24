@@ -1,6 +1,11 @@
 .build/
-Vendor/TranscribeCpp.xcframework/
-Vendor/TranscribeCpp.xcframework.zip
+.swiftpm/
 dist/
+Vendor/*.xcframework/
+Vendor/*.xcframework.zip
+models/
+*.gguf
+*.gguf.part
 *.wav
+.DS_Store
 .wayfinder/
