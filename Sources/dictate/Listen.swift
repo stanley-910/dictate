@@ -123,7 +123,17 @@ enum Listen {
         let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
         source.setEventHandler {
             ended = true
-            dictation?.shutdown()
+            guard let d = dictation else { exit(code) }
+            // Mic and speakers first: the caller SIGKILLs after 3 s, and the
+            // model unload below waits behind any load or inference in flight.
+            _ = d.stop()
+            let unloaded = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                d.transcriber.unloadSync()
+                unloaded.signal()
+            }
+            // _exit skips the C++ teardown that asserts on a live model.
+            if unloaded.wait(timeout: .now() + 2) == .timedOut { _exit(code) }
             exit(code)
         }
         source.resume()
