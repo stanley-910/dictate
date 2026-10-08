@@ -1,58 +1,75 @@
-import AVFoundation
+import AudioToolbox
 import CoreAudio
 import Foundation
 
-/// Captures the default input device and accumulates mono float32 at 16 kHz,
-/// which is what the Cohere model expects.
+/// Captures an input device and accumulates mono float32 at 16 kHz, which is
+/// what the Cohere model expects.
+///
+/// Uses an input AudioQueue rather than AVAudioEngine: the queue converts
+/// whatever the hardware delivers to 16 kHz mono itself. AVAudioEngine keeps
+/// a stale 48 kHz client format when pointed at a Bluetooth headset whose mic
+/// runs in HFP at 16 or 24 kHz (AirPods), and its tap then throws an
+/// uncatchable "format mismatch" exception.
 final class Recorder {
-    private let engine = AVAudioEngine()
-    private var converter: AVAudioConverter?
+    private var queue: AudioQueueRef?
+    private let callbackQueue = DispatchQueue(label: "dictate.recorder")
     private var samples: [Float] = []
     private let lock = NSLock()
     private(set) var startedAt: Date?
     static let targetRate: Double = 16_000
-    /// Linear RMS of each converted chunk, called on the audio thread.
+    private static let bufferCount = 3
+    private static let bufferFrames: UInt32 = 1_600  // 100 ms
+    /// Linear RMS of each chunk, called on the audio thread.
     var onLevel: ((Float) -> Void)?
 
-    var isRecording: Bool { engine.isRunning }
+    var isRecording: Bool { queue != nil }
 
     var duration: TimeInterval {
         startedAt.map { Date().timeIntervalSince($0) } ?? 0
     }
 
     func start(device: AudioInputDevice? = nil) throws {
-        let input = engine.inputNode
-        if let device, let unit = input.audioUnit {
-            var id = device.id
-            let status = AudioUnitSetProperty(
-                unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
-                &id, UInt32(MemoryLayout<AudioDeviceID>.size))
-            if status != noErr { log("could not select \(device.name) (\(status)); using default") }
-        }
-        let inFormat = input.outputFormat(forBus: 0)
-        guard inFormat.sampleRate > 0, inFormat.channelCount > 0 else {
-            throw DictateError.audio("no input device")
-        }
-        guard let outFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32, sampleRate: Recorder.targetRate, channels: 1, interleaved: false),
-            let conv = AVAudioConverter(from: inFormat, to: outFormat)
-        else { throw DictateError.audio("cannot build converter from \(inFormat)") }
-        converter = conv
+        teardown()
         lock.lock(); samples.removeAll(keepingCapacity: true); lock.unlock()
 
-        input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 4096, format: inFormat) { [weak self] buffer, _ in
-            self?.consume(buffer, converter: conv, outFormat: outFormat)
+        var format = AudioStreamBasicDescription(
+            mSampleRate: Recorder.targetRate, mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+            mBytesPerPacket: 4, mFramesPerPacket: 1, mBytesPerFrame: 4,
+            mChannelsPerFrame: 1, mBitsPerChannel: 32, mReserved: 0)
+        var newQueue: AudioQueueRef?
+        var status = AudioQueueNewInputWithDispatchQueue(&newQueue, &format, 0, callbackQueue) {
+            [weak self] queue, buffer, _, _, _ in
+            self?.consume(buffer)
+            AudioQueueEnqueueBuffer(queue, buffer, 0, nil)
         }
-        engine.prepare()
-        try engine.start()
+        guard status == noErr, let q = newQueue else { throw DictateError.audio("cannot open input (\(status))") }
+
+        if let device {
+            var uid = device.uid as CFString
+            status = AudioQueueSetProperty(
+                q, kAudioQueueProperty_CurrentDevice, &uid, UInt32(MemoryLayout<CFString>.size))
+            if status != noErr { log("could not select \(device.name) (\(status)); using default") }
+        }
+        for _ in 0..<Recorder.bufferCount {
+            var buffer: AudioQueueBufferRef?
+            if AudioQueueAllocateBuffer(q, Recorder.bufferFrames * format.mBytesPerFrame, &buffer) == noErr,
+               let buffer {
+                AudioQueueEnqueueBuffer(q, buffer, 0, nil)
+            }
+        }
+        status = AudioQueueStart(q, nil)
+        guard status == noErr else {
+            AudioQueueDispose(q, true)
+            throw DictateError.audio("cannot start \(device?.name ?? "default input") (\(status))")
+        }
+        queue = q
         startedAt = Date()
     }
 
     /// Stops capture and returns everything recorded so far.
     func stop() -> [Float] {
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        teardown()
         startedAt = nil
         lock.lock(); defer { lock.unlock() }
         let out = samples
@@ -60,26 +77,23 @@ final class Recorder {
         return out
     }
 
-    private func consume(_ buffer: AVAudioPCMBuffer, converter: AVAudioConverter, outFormat: AVAudioFormat) {
-        let ratio = outFormat.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 32
-        guard let out = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: capacity) else { return }
-        var fed = false
-        var error: NSError?
-        converter.convert(to: out, error: &error) { _, status in
-            if fed { status.pointee = .noDataNow; return nil }
-            fed = true
-            status.pointee = .haveData
-            return buffer
-        }
-        if let error { log("convert: \(error)"); return }
-        guard let ch = out.floatChannelData, out.frameLength > 0 else { return }
-        let chunk = Array(UnsafeBufferPointer(start: ch[0], count: Int(out.frameLength)))
+    private func teardown() {
+        guard let q = queue else { return }
+        queue = nil
+        AudioQueueStop(q, true)
+        AudioQueueDispose(q, true)
+    }
+
+    private func consume(_ buffer: AudioQueueBufferRef) {
+        let count = Int(buffer.pointee.mAudioDataByteSize) / MemoryLayout<Float>.size
+        guard count > 0 else { return }
+        let chunk = Array(UnsafeBufferPointer(
+            start: buffer.pointee.mAudioData.assumingMemoryBound(to: Float.self), count: count))
         lock.lock(); samples.append(contentsOf: chunk); lock.unlock()
         if let onLevel {
             var sum: Float = 0
             for v in chunk { sum += v * v }
-            onLevel(sqrt(sum / Float(chunk.count)))
+            onLevel(sqrt(sum / Float(count)))
         }
     }
 }
