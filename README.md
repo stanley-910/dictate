@@ -159,10 +159,20 @@ Commands:
 ```sh
 dictate                    # daemon (what launchd runs)
 dictate transcribe f.wav   # offline check without the mic
+dictate listen             # record until you stop talking, print the text
 dictate fix "neo vim"      # apply dictionary + replacements to text
 dictate mics               # list input devices
 dictate config             # config path and effective values
 ```
+
+`dictate listen` is for other programs (Recall's spoken review): it records
+from the same microphone as the daemon, stops after speech and then
+`--silence-ms` (2000) of quiet, gives up after `--nothing-ms` (8000) with
+nothing heard, and stops at `--limit-ms` (60000) regardless. It writes `ready`
+to stderr once the mic is live and the transcript to stdout (empty when
+nothing was said). SIGTERM or SIGINT stops it at once with no output (exit
+143 or 130); errors are one line on stderr with exit 1. No sounds, pill, or
+paste, and it runs alongside the daemon.
 
 Logs: `~/.local/state/dictate/dictate.log` when not started from a terminal.
 

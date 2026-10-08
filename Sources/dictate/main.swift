@@ -11,19 +11,21 @@ case "transcribe":
     let config = Config.load()
     do {
         let pcm = try Wav.readMono16k(URL(fileURLWithPath: args[1]))
-        var t: Transcriber? = Transcriber(config: config)
+        let dictation = Dictation(config: config)
         let sem = DispatchSemaphore(value: 0)
-        t!.transcribe(pcm) { result in
+        dictation.text(from: pcm) { result in
             switch result {
-            case .success(let text): print(config.postProcess(text))
+            case .success(let text): print(text)
             case .failure(let e): FileHandle.standardError.write("error: \(e)\n".data(using: .utf8)!)
             }
             sem.signal()
         }
         sem.wait()
-        t?.unload()  // ggml's Metal teardown asserts if a model outlives exit()
-        t = nil
+        dictation.shutdown()
     } catch { fail("\(error)") }
+
+case "listen":
+    Listen.run(Array(args.dropFirst()))
 
 case "fix":
     // Run dictionary + replacements on text: dictate fix "neo vim and super whisper"
@@ -52,6 +54,8 @@ case "help", "-h", "--help":
     dictate                 run the hotkey daemon
     dictate transcribe FILE transcribe a WAV file (any rate; converted to 16 kHz mono)
     dictate config          print config path and effective config
+    dictate listen          record until speech ends, print the transcript
+            [--silence-ms 2000] [--nothing-ms 8000] [--limit-ms 60000]
     dictate fix TEXT        apply dictionary and replacements to TEXT
     dictate mics            list input devices
     dictate version

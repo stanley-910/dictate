@@ -19,8 +19,8 @@ final class Recorder {
     static let targetRate: Double = 16_000
     private static let bufferCount = 3
     private static let bufferFrames: UInt32 = 1_600  // 100 ms
-    /// Linear RMS of each chunk, called on the audio thread.
-    var onLevel: ((Float) -> Void)?
+    /// Linear RMS of each chunk and its length in frames, called on the audio thread.
+    var onLevel: ((_ rms: Float, _ frames: Int) -> Void)?
 
     var isRecording: Bool { queue != nil }
 
@@ -93,7 +93,7 @@ final class Recorder {
         if let onLevel {
             var sum: Float = 0
             for v in chunk { sum += v * v }
-            onLevel(sqrt(sum / Float(count)))
+            onLevel(sqrt(sum / Float(count)), count)
         }
     }
 }

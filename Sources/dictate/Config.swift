@@ -174,7 +174,11 @@ struct Config: Codable {
     }
 }
 
+/// Off for `dictate listen`, whose stderr carries only `ready` and one error line.
+var logEnabled = true
+
 func log(_ message: String) {
+    guard logEnabled else { return }
     let ts = ISO8601DateFormatter().string(from: Date())
     FileHandle.standardError.write("\(ts) \(message)\n".data(using: .utf8)!)
 }

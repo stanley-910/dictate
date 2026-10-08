@@ -6,8 +6,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     enum State { case idle, recording, transcribing }
 
     private var config: Config
-    private let recorder = Recorder()
-    private let transcriber: Transcriber
+    private let dictation: Dictation
     private let indicator = Indicator()
     private var listener: HotkeyListener?
     private var statusItem: NSStatusItem?
@@ -15,7 +14,6 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var maxTimer: Timer?
     private var reloadTimer: Timer?
     private var configModified: Date?
-    private let mute = OutputMute()
     /// Index of the hotkey that started the current recording.
     private var activeHotkey = 0
     /// Modifiers held when the recording was stopped.
@@ -24,10 +22,10 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     init(config: Config) {
         self.config = config
-        self.transcriber = Transcriber(config: config)
+        self.dictation = Dictation(config: config)
         super.init()
         if config.indicator {
-            recorder.onLevel = { [indicator] level in indicator.push(level: level) }
+            dictation.recorder.onLevel = { [indicator] level, _ in indicator.push(level: level) }
         }
     }
 
@@ -62,9 +60,8 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         configModified = now
         let old = config
         config = Config.load()
-        transcriber.config = config
-        if config.modelURL != old.modelURL { transcriber.unload() }
-        recorder.onLevel = config.indicator ? { [indicator] level in indicator.push(level: level) } : nil
+        dictation.config = config
+        dictation.recorder.onLevel = config.indicator ? { [indicator] level, _ in indicator.push(level: level) } : nil
         if config.hotkey != old.hotkey || config.holdHotkey != old.holdHotkey || config.mode != old.mode {
             listener?.stop()
             listener = nil
@@ -112,7 +109,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var warnedAboutAccessibility = false
 
     func applicationWillTerminate(_ notification: Notification) {
-        transcriber.unloadSync()  // ggml's Metal teardown asserts if a model outlives exit()
+        dictation.shutdown()
     }
 
     // MARK: hotkey state machine
@@ -141,14 +138,13 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func startRecording() {
         do {
-            try recorder.start(device: AudioDevices.resolve(configured: config.microphone))
+            try dictation.start()
         } catch {
             log("\(error)")
             beep()
             return
         }
         state = .recording
-        transcriber.preload()
         setIcon("●", color: .systemRed)
         if config.indicator {
             indicator.position = config.indicatorPosition
@@ -156,7 +152,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             indicator.show(.recording)
         }
         if config.sounds { Sounds.play(config.soundPack.start) }
-        if config.muteSpeakersWhileRecording { mute.engage() }
+        dictation.muteSpeakersIfConfigured()
         maxTimer?.invalidate()
         maxTimer = Timer.scheduledTimer(withTimeInterval: config.maximumSeconds, repeats: false) { [weak self] _ in
             self?.stopAndTranscribe()
@@ -171,7 +167,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func escapePressed() {
         let needsConfirm = config.cancelConfirmAfterSeconds > 0
-            && recorder.duration >= config.cancelConfirmAfterSeconds
+            && dictation.recorder.duration >= config.cancelConfirmAfterSeconds
         if !needsConfirm || cancelArmed {
             cancel()
             return
@@ -197,8 +193,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func cancel() {
         disarmCancel()
         maxTimer?.invalidate()
-        _ = recorder.stop()
-        mute.release()
+        _ = dictation.stop()
         state = .idle
         setIcon("○")
         indicator.hide()
@@ -210,11 +205,9 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard state == .recording else { return }
         disarmCancel()
         maxTimer?.invalidate()
-        let seconds = recorder.duration
-        let pcm = recorder.stop()
-        mute.release()
+        let (pcm, seconds) = dictation.stop()
         stopFlags = listener?.lastFlags ?? []
-        if seconds < config.minimumSeconds {
+        if dictation.isTooShort(seconds) {
             state = .idle
             setIcon("○")
             indicator.hide()
@@ -224,7 +217,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setIcon("◐", color: .systemOrange)
         indicator.mode = .transcribing
         if config.sounds { Sounds.play(config.soundPack.stop) }
-        transcriber.transcribe(pcm) { [weak self] result in
+        dictation.text(from: pcm) { [weak self] result in
             DispatchQueue.main.async { self?.finish(result) }
         }
     }
@@ -234,8 +227,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setIcon("○")
         indicator.hide()
         switch result {
-        case .success(let raw):
-            var text = config.postProcess(raw)
+        case .success(var text):
             if text.isEmpty { return }
             if config.trailingSpace { text += " " }
             let held = CGEventSource.flagsState(.combinedSessionState).union(listener?.lastFlags ?? []).union(stopFlags)
