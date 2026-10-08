@@ -107,6 +107,10 @@ security delete-identity -c dictate-dev                                 # if you
 - Escape while recording cancels and never reaches the frontmost app. Past
   `cancelConfirmAfterSeconds` (default 10) the first Escape only arms (dot
   turns yellow); a second within 2 s cancels. Set 0 for single-press.
+- Long recordings are transcribed in pieces of at most `chunkSeconds`
+  (default 30), cut at the quietest moment near the end of each piece. The
+  model drifts and repeats itself on a single pass much past half a minute.
+  Set 0 to disable.
 - `mode: "hold"` records only while the key is held. `holdHotkey` adds a
   second key that is always push-to-talk, e.g. `"right_command"` or `"fn"`,
   alongside the toggle key.

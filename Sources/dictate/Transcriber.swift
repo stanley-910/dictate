@@ -60,11 +60,20 @@ final class Transcriber {
                 var options = RunOptions()
                 options.language = self.config.language
                 let t0 = Date()
-                let transcript = try session.run(pcm, options: options)
+                // The model decodes a whole clip in one pass and falls apart past
+                // roughly half a minute (skips ahead, then loops the last sentence),
+                // and the library does no long-form chunking for it. Cut at quiet
+                // points and stitch the pieces.
+                let chunks = Chunker.split(pcm, maxSeconds: self.config.chunkSeconds, rate: Int(Recorder.targetRate))
+                var parts: [String] = []
+                for chunk in chunks {
+                    let text = try session.run(chunk, options: options).text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !text.isEmpty { parts.append(text) }
+                }
                 let ms = Int(Date().timeIntervalSince(t0) * 1000)
-                log("transcribed \(String(format: "%.1f", Double(pcm.count) / 16000)) s of audio in \(ms) ms")
+                log("transcribed \(String(format: "%.1f", Double(pcm.count) / 16000)) s of audio in \(ms) ms (\(chunks.count) chunk\(chunks.count == 1 ? "" : "s"))")
                 self.scheduleUnload()
-                completion(.success(transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)))
+                completion(.success(parts.joined(separator: " ")))
             } catch {
                 completion(.failure(error))
             }

@@ -49,6 +49,10 @@ struct Config: Codable {
     var minimumSeconds: Double = 0.3
     /// Longest recording before auto-stop (seconds).
     var maximumSeconds: Double = 120
+    /// Recordings are transcribed in pieces no longer than this (seconds), cut
+    /// at the quietest moment in the last part of each piece. The model drifts
+    /// and repeats itself on longer single passes. 0 = never split.
+    var chunkSeconds: Double = 30
     /// Recordings at least this long need Escape twice to cancel. 0 = always once.
     var cancelConfirmAfterSeconds: Double = 10
     /// Correct spellings of names and jargon. Matched fuzzily against the
