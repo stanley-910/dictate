@@ -20,6 +20,12 @@ struct EndOfSpeech {
     /// Blocks averaged for the noise floor (300 ms at 100 ms blocks), so one
     /// quiet block does not drag the floor down.
     static let floorBlocks = 3
+    /// Below this a block is the mic still waking (a slow AirPods switch reads
+    /// zeros for longer than the warm-up), never a room: it never sets the floor.
+    static let deadRMS: Float = 0.0005
+    /// The floor is the quietest 300 ms of the last 5 s, so a wrong early
+    /// estimate recovers.
+    static let floorWindowBlocks = 50
     /// Sound above the threshold, in all, before it counts as speech: a click or
     /// a breath is one block.
     static let speechMinMs = 300
@@ -30,7 +36,8 @@ struct EndOfSpeech {
 
     private var levels: [Float] = []
     private var blockMs = 100
-    /// Lowest 300 ms average after the warm-up: the room with nobody talking.
+    /// Quietest 300 ms average of the last 5 s, warm-up and dead blocks left out:
+    /// the room with nobody talking.
     private(set) var floor: Float?
 
     /// The level a block must pass to count as speech.
@@ -49,10 +56,17 @@ struct EndOfSpeech {
         blockMs = ms
         levels.append(rms)
         let n = levels.count
-        if n >= Self.warmupBlocks + Self.floorBlocks {
-            let avg = levels[(n - Self.floorBlocks)...].reduce(0, +) / Float(Self.floorBlocks)
-            floor = min(floor ?? avg, avg)
+        let from = max(Self.warmupBlocks, n - Self.floorWindowBlocks)
+        var lowest: Float?
+        if n - from >= Self.floorBlocks {
+            for start in from...(n - Self.floorBlocks) {
+                let window = levels[start..<(start + Self.floorBlocks)]
+                if window.contains(where: { $0 < Self.deadRMS }) { continue }
+                let avg = window.reduce(0, +) / Float(Self.floorBlocks)
+                lowest = min(lowest ?? avg, avg)
+            }
         }
+        floor = lowest
         let elapsedMs = n * ms
         if heard {
             let t = threshold
