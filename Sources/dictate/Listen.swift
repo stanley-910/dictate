@@ -43,6 +43,12 @@ enum Listen {
     private static var detector = EndOfSpeech()
     private static var readySent = false
     private static var ended = false
+    /// Set first by SIGINT/SIGTERM; a transcript that finishes later is dropped.
+    private static var cancelled = false
+    private static var tearingDown = false
+    /// Read by the exit paths off the main queue; cancellation's code wins.
+    private static var exitCode: Int32 = 0
+    private static let exitLock = NSLock()
     private static var signalSources: [DispatchSourceSignal] = []
 
     static func run(_ args: [String]) -> Never {
@@ -122,6 +128,7 @@ enum Listen {
         signal(sig, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
         source.setEventHandler {
+            cancelled = true
             ended = true
             teardown(code: code)
         }
@@ -145,9 +152,11 @@ enum Listen {
         guard outcome == .speech, !d.isTooShort(seconds) else { teardown(code: 0); return }
         d.text(from: pcm) { result in
             DispatchQueue.main.async {
+                guard !cancelled else { return }
                 switch result {
                 case .success(let text):
-                    if !text.isEmpty { print(text) }
+                    // Unbuffered: the fallback _exit would drop a buffered print.
+                    if !text.isEmpty { FileHandle.standardOutput.write((text + "\n").data(using: .utf8)!) }
                     teardown(code: 0)
                 case .failure(let error):
                     FileHandle.standardError.write("\(error)\n".data(using: .utf8)!)
@@ -161,13 +170,25 @@ enum Listen {
     /// then unloads the model off the main queue so signal handlers stay
     /// runnable; the unload waits behind any load or inference in flight, so
     /// after 2 s it _exits, skipping the C++ teardown that asserts on a live model.
+    /// Runs once, on the main queue; a signal arriving later only replaces the
+    /// exit code.
     private static func teardown(code: Int32) {
+        exitLock.lock()
+        if cancelled || !tearingDown { exitCode = code }
+        exitLock.unlock()
+        guard !tearingDown else { return }
+        tearingDown = true
         guard let d = dictation else { exit(code) }
         _ = d.stop()
         DispatchQueue.global().async {
             d.transcriber.unloadSync()
-            exit(code)
+            exit(currentExitCode())
         }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { _exit(code) }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { _exit(currentExitCode()) }
+    }
+
+    private static func currentExitCode() -> Int32 {
+        exitLock.lock(); defer { exitLock.unlock() }
+        return exitCode
     }
 }
