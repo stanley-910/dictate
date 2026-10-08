@@ -8,9 +8,16 @@ import Foundation
 struct EndOfSpeech {
     enum Outcome: Equatable { case speech, nothing }
 
-    /// RMS above which a block counts as speech. AirPods in call mode sit
-    /// quieter than a laptop mic; 0.01 is a whisper's floor.
+    /// RMS below which nothing counts as speech, however quiet the room. AirPods
+    /// in call mode sit quieter than a laptop mic; 0.01 is a whisper's floor.
     static let speechRMS: Float = 0.01
+    /// Speech is this many times the room's noise floor. A fixed threshold alone
+    /// never heard the quiet after speech on the MacBook mic (room noise sat above
+    /// 0.01, so every answer ran to the limit).
+    static let overFloor: Float = 3
+    /// Blocks averaged for the noise floor (300 ms at 100 ms blocks), so one
+    /// quiet block does not drag the floor down.
+    static let floorBlocks = 3
 
     var silenceMs = 2000
     var nothingMs = 8000
@@ -19,15 +26,37 @@ struct EndOfSpeech {
     private(set) var heard = false
     private var quietMs = 0
     private var elapsedMs = 0
+    private var recent: [Float] = []
+    /// Lowest 300 ms average seen: the room with nobody talking.
+    private(set) var floor: Float?
+    /// Loudest block so far: speech before the floor was known still counts once it is.
+    private var peak: Float = 0
+
+    /// The level a block must pass to count as speech.
+    var threshold: Float { max(Self.speechRMS, (floor ?? 0) * Self.overFloor) }
 
     /// Feeds one block; returns an outcome once the recording should end.
     mutating func feed(rms: Float, ms: Int) -> Outcome? {
         elapsedMs += ms
-        if rms > Self.speechRMS {
+        recent.append(rms)
+        if recent.count > Self.floorBlocks { recent.removeFirst() }
+        if recent.count == Self.floorBlocks {
+            let avg = recent.reduce(0, +) / Float(recent.count)
+            floor = min(floor ?? avg, avg)
+        }
+        peak = max(peak, rms)
+        if floor == nil {
+            // The first 300 ms only measure the room; speech in them counts through `peak`.
+        } else if rms > threshold {
             heard = true
             quietMs = 0
         } else {
             quietMs += ms
+            // The floor only now fell below speech heard earlier: the quiet starts here.
+            if !heard && peak > threshold {
+                heard = true
+                quietMs = ms
+            }
         }
         if heard && quietMs >= silenceMs { return .speech }
         if !heard && elapsedMs >= nothingMs { return .nothing }
@@ -42,6 +71,8 @@ enum Listen {
     private static var dictation: Dictation?
     private static var detector = EndOfSpeech()
     private static var readySent = false
+    /// `--levels`: each block's RMS and the speech threshold on stderr, for tuning.
+    private static var traceLevels = false
     private static var ended = false
     /// Set first by SIGINT/SIGTERM; a transcript that finishes later is dropped.
     private static var cancelled = false
@@ -93,8 +124,13 @@ enum Listen {
         var i = 0
         while i < args.count {
             let flag = args[i]
+            if flag == "--levels" {
+                traceLevels = true
+                i += 1
+                continue
+            }
             guard i + 1 < args.count, let n = Int(args[i + 1]), n > 0 else {
-                fail("usage: dictate listen [--silence-ms 2000] [--nothing-ms 8000] [--limit-ms 60000]")
+                fail("usage: dictate listen [--silence-ms 2000] [--nothing-ms 8000] [--limit-ms 60000] [--levels]")
             }
             switch flag {
             case "--silence-ms": detector.silenceMs = n
@@ -142,7 +178,11 @@ enum Listen {
             readySent = true
             FileHandle.standardError.write("ready\n".data(using: .utf8)!)
         }
-        if let outcome = detector.feed(rms: rms, ms: ms) { end(outcome) }
+        let outcome = detector.feed(rms: rms, ms: ms)
+        if traceLevels {
+            FileHandle.standardError.write(String(format: "level %.4f threshold %.4f\n", rms, detector.threshold).data(using: .utf8)!)
+        }
+        if let outcome { end(outcome) }
     }
 
     private static func end(_ outcome: EndOfSpeech.Outcome) {
