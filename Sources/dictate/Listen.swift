@@ -11,55 +11,56 @@ struct EndOfSpeech {
     /// RMS below which nothing counts as speech, however quiet the room. AirPods
     /// in call mode sit quieter than a laptop mic; 0.01 is a whisper's floor.
     static let speechRMS: Float = 0.01
-    /// Speech is this many times the room's noise floor. A fixed threshold alone
-    /// never heard the quiet after speech on the MacBook mic (room noise sat above
-    /// 0.01, so every answer ran to the limit).
-    static let overFloor: Float = 3
+    /// Speech is this many times the room's noise floor. Measured 2026-10-08 on
+    /// the MacBook mic: room 0.009–0.014 (a fixed 0.01 never heard the quiet
+    /// after speech), soft speech 0.023–0.084.
+    static let overFloor: Float = 2.5
+    /// The mic's first blocks read near zero while it warms up; the floor skips them.
+    static let warmupBlocks = 2
     /// Blocks averaged for the noise floor (300 ms at 100 ms blocks), so one
     /// quiet block does not drag the floor down.
     static let floorBlocks = 3
+    /// Sound above the threshold, in all, before it counts as speech: a click or
+    /// a breath is one block.
+    static let speechMinMs = 300
 
     var silenceMs = 2000
     var nothingMs = 8000
     var limitMs = 60000
 
-    private(set) var heard = false
-    private var quietMs = 0
-    private var elapsedMs = 0
-    private var recent: [Float] = []
-    /// Lowest 300 ms average seen: the room with nobody talking.
+    private var levels: [Float] = []
+    private var blockMs = 100
+    /// Lowest 300 ms average after the warm-up: the room with nobody talking.
     private(set) var floor: Float?
-    /// Loudest block so far: speech before the floor was known still counts once it is.
-    private var peak: Float = 0
 
     /// The level a block must pass to count as speech.
     var threshold: Float { max(Self.speechRMS, (floor ?? 0) * Self.overFloor) }
 
+    /// Whether enough sound above the threshold has come, judged against the
+    /// floor as it stands now (speech before the floor was known counts once it is).
+    var heard: Bool {
+        guard floor != nil else { return false }
+        let t = threshold
+        return levels.reduce(0) { $1 > t ? $0 + blockMs : $0 } >= Self.speechMinMs
+    }
+
     /// Feeds one block; returns an outcome once the recording should end.
     mutating func feed(rms: Float, ms: Int) -> Outcome? {
-        elapsedMs += ms
-        recent.append(rms)
-        if recent.count > Self.floorBlocks { recent.removeFirst() }
-        if recent.count == Self.floorBlocks {
-            let avg = recent.reduce(0, +) / Float(recent.count)
+        blockMs = ms
+        levels.append(rms)
+        let n = levels.count
+        if n >= Self.warmupBlocks + Self.floorBlocks {
+            let avg = levels[(n - Self.floorBlocks)...].reduce(0, +) / Float(Self.floorBlocks)
             floor = min(floor ?? avg, avg)
         }
-        peak = max(peak, rms)
-        if floor == nil {
-            // The first 300 ms only measure the room; speech in them counts through `peak`.
-        } else if rms > threshold {
-            heard = true
-            quietMs = 0
-        } else {
-            quietMs += ms
-            // The floor only now fell below speech heard earlier: the quiet starts here.
-            if !heard && peak > threshold {
-                heard = true
-                quietMs = ms
-            }
+        let elapsedMs = n * ms
+        if heard {
+            let t = threshold
+            let lastLoud = levels.lastIndex { $0 > t } ?? 0
+            if (n - 1 - lastLoud) * ms >= silenceMs { return .speech }
+        } else if elapsedMs >= nothingMs {
+            return .nothing
         }
-        if heard && quietMs >= silenceMs { return .speech }
-        if !heard && elapsedMs >= nothingMs { return .nothing }
         if elapsedMs >= limitMs { return heard ? .speech : .nothing }
         return nil
     }
