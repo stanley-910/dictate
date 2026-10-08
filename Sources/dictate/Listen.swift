@@ -123,18 +123,7 @@ enum Listen {
         let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
         source.setEventHandler {
             ended = true
-            guard let d = dictation else { exit(code) }
-            // Mic and speakers first: the caller SIGKILLs after 3 s, and the
-            // model unload below waits behind any load or inference in flight.
-            _ = d.stop()
-            let unloaded = DispatchSemaphore(value: 0)
-            DispatchQueue.global().async {
-                d.transcriber.unloadSync()
-                unloaded.signal()
-            }
-            // _exit skips the C++ teardown that asserts on a live model.
-            if unloaded.wait(timeout: .now() + 2) == .timedOut { _exit(code) }
-            exit(code)
+            teardown(code: code)
         }
         source.resume()
         signalSources.append(source)
@@ -153,23 +142,32 @@ enum Listen {
         guard !ended, let d = dictation else { return }
         ended = true
         let (pcm, seconds) = d.stop()
-        guard outcome == .speech, !d.isTooShort(seconds) else { finish(code: 0) }
+        guard outcome == .speech, !d.isTooShort(seconds) else { teardown(code: 0); return }
         d.text(from: pcm) { result in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let text):
                     if !text.isEmpty { print(text) }
-                    finish(code: 0)
+                    teardown(code: 0)
                 case .failure(let error):
                     FileHandle.standardError.write("\(error)\n".data(using: .utf8)!)
-                    finish(code: 1)
+                    teardown(code: 1)
                 }
             }
         }
     }
 
-    private static func finish(code: Int32) -> Never {
-        dictation?.shutdown()
-        exit(code)
+    /// Releases the mic and speakers at once (the caller SIGKILLs after 3 s),
+    /// then unloads the model off the main queue so signal handlers stay
+    /// runnable; the unload waits behind any load or inference in flight, so
+    /// after 2 s it _exits, skipping the C++ teardown that asserts on a live model.
+    private static func teardown(code: Int32) {
+        guard let d = dictation else { exit(code) }
+        _ = d.stop()
+        DispatchQueue.global().async {
+            d.transcriber.unloadSync()
+            exit(code)
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { _exit(code) }
     }
 }
