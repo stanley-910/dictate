@@ -37,46 +37,54 @@ struct EndOfSpeech {
     private var levels: [Float] = []
     private var blockMs = 100
     /// Quietest 300 ms average of the last 5 s, warm-up and dead blocks left out:
-    /// the room with nobody talking.
+    /// the room with nobody talking. Once speech is confirmed it only falls, so
+    /// the dips between words in a long answer never become the room.
     private(set) var floor: Float?
+    /// Speech confirmed: stays so; the quiet after it is counted from here on.
+    private(set) var heard = false
+    private var quietMs = 0
 
     /// The level a block must pass to count as speech.
     var threshold: Float { max(Self.speechRMS, (floor ?? 0) * Self.overFloor) }
-
-    /// Whether enough sound above the threshold has come, judged against the
-    /// floor as it stands now (speech before the floor was known counts once it is).
-    var heard: Bool {
-        guard floor != nil else { return false }
-        let t = threshold
-        return levels.reduce(0) { $1 > t ? $0 + blockMs : $0 } >= Self.speechMinMs
-    }
 
     /// Feeds one block; returns an outcome once the recording should end.
     mutating func feed(rms: Float, ms: Int) -> Outcome? {
         blockMs = ms
         levels.append(rms)
         let n = levels.count
-        let from = max(Self.warmupBlocks, n - Self.floorWindowBlocks)
-        var lowest: Float?
-        if n - from >= Self.floorBlocks {
-            for start in from...(n - Self.floorBlocks) {
-                let window = levels[start..<(start + Self.floorBlocks)]
-                if window.contains(where: { $0 < Self.deadRMS }) { continue }
-                let avg = window.reduce(0, +) / Float(Self.floorBlocks)
-                lowest = min(lowest ?? avg, avg)
+        if let room = windowFloor() { floor = heard ? min(floor ?? room, room) : room }
+        if heard {
+            if rms > threshold { quietMs = 0 } else { quietMs += ms }
+        } else if floor != nil {
+            // Judged against the floor as it stands now: speech before the floor
+            // was known counts once it is.
+            let t = threshold
+            if levels.reduce(0, { $1 > t ? $0 + ms : $0 }) >= Self.speechMinMs {
+                heard = true
+                let lastLoud = levels.lastIndex { $0 > t } ?? (n - 1)
+                quietMs = (n - 1 - lastLoud) * ms
             }
         }
-        floor = lowest
         let elapsedMs = n * ms
-        if heard {
-            let t = threshold
-            let lastLoud = levels.lastIndex { $0 > t } ?? 0
-            if (n - 1 - lastLoud) * ms >= silenceMs { return .speech }
-        } else if elapsedMs >= nothingMs {
-            return .nothing
-        }
+        if heard && quietMs >= silenceMs { return .speech }
+        if !heard && elapsedMs >= nothingMs { return .nothing }
         if elapsedMs >= limitMs { return heard ? .speech : .nothing }
         return nil
+    }
+
+    /// Quietest 300 ms average in the last 5 s, skipping the warm-up and dead blocks.
+    private func windowFloor() -> Float? {
+        let n = levels.count
+        let from = max(Self.warmupBlocks, n - Self.floorWindowBlocks)
+        guard n - from >= Self.floorBlocks else { return nil }
+        var lowest: Float?
+        for start in from...(n - Self.floorBlocks) {
+            let window = levels[start..<(start + Self.floorBlocks)]
+            if window.contains(where: { $0 < Self.deadRMS }) { continue }
+            let avg = window.reduce(0, +) / Float(Self.floorBlocks)
+            lowest = min(lowest ?? avg, avg)
+        }
+        return lowest
     }
 }
 

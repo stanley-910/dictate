@@ -10,7 +10,8 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 [ -d "$SRC" ] || { echo "missing $SRC" >&2; exit 1; }
 mkdir -p "$HOME/Applications"
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-pkill -f "$DEST/Contents/MacOS/dictate" 2>/dev/null || true
+# Exact match: only the daemon, never a `dictate listen` another app is running.
+pkill -fx "$DEST/Contents/MacOS/dictate" 2>/dev/null || true
 rm -rf "$DEST"
 cp -R "$SRC" "$DEST"
 if [ -f "$PLIST" ]; then
