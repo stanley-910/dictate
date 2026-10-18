@@ -62,12 +62,14 @@ final class Transcriber {
                 // points and stitch the pieces.
                 let chunks = Chunker.split(pcm, maxSeconds: self.config.chunkSeconds, rate: Int(Recorder.targetRate))
                 var parts: [String] = []
+                var fed = 0
                 for chunk in chunks {
-                    let text = try self.decode(chunk)
-                    if !text.isEmpty { parts.append(text) }
+                    let piece = try self.decode(chunk)
+                    if !piece.text.isEmpty { parts.append(piece.text) }
+                    fed += piece.samples
                 }
                 let ms = Int(Date().timeIntervalSince(t0) * 1000)
-                log("transcribed \(seconds(pcm.count)) s of audio in \(ms) ms (\(chunks.count) chunk\(chunks.count == 1 ? "" : "s"))")
+                log("transcribed \(seconds(pcm.count)) s of audio (\(seconds(fed)) s after pauses) in \(ms) ms (\(chunks.count) chunk\(chunks.count == 1 ? "" : "s"))")
                 self.scheduleUnload()
                 completion(.success(parts.joined(separator: " ")))
             } catch {
@@ -82,13 +84,16 @@ final class Transcriber {
         LiveTranscript(transcriber: self, maxSeconds: config.chunkSeconds, recorded: recorded)
     }
 
-    /// One piece, on `queue` only.
-    fileprivate func decode(_ chunk: [Float]) throws -> String {
+    /// One piece, long pauses shortened; also how many samples the model got.
+    /// On `queue` only.
+    fileprivate func decode(_ chunk: [Float]) throws -> (text: String, samples: Int) {
         try load()
         guard let session else { throw DictateError.notLoaded }
         var options = RunOptions()
         options.language = config.language
-        return try session.run(chunk, options: options).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let audio = Silence.squeeze(chunk, maxPause: config.maxPauseSeconds, rate: Int(Recorder.targetRate))
+        let text = try session.run(audio, options: options).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (text, audio.count)
     }
 
     fileprivate func scheduleUnload() {
@@ -119,6 +124,7 @@ final class LiveTranscript {
     private var decoded = 0
     private var parts: [String] = []
     private var pieces = 0
+    private var fed = 0
     private var failure: Error?
 
     fileprivate init(transcriber: Transcriber, maxSeconds: Double, recorded: @escaping (Int) -> [Float]) {
@@ -151,7 +157,7 @@ final class LiveTranscript {
                     try self.take(chunk)
                 }
                 let ms = Int(Date().timeIntervalSince(t0) * 1000)
-                log("transcribed \(seconds(pcm.count)) s of audio in \(ms) ms after stop (\(self.pieces) chunk\(self.pieces == 1 ? "" : "s"), \(early) while recording)")
+                log("transcribed \(seconds(pcm.count)) s of audio (\(seconds(self.fed)) s after pauses) in \(ms) ms after stop (\(self.pieces) chunk\(self.pieces == 1 ? "" : "s"), \(early) while recording)")
                 self.transcriber.scheduleUnload()
                 completion(.success(self.parts.joined(separator: " ")))
             } catch {
@@ -177,8 +183,9 @@ final class LiveTranscript {
     }
 
     private func take(_ chunk: [Float]) throws {
-        let text = try transcriber.decode(chunk)
-        if !text.isEmpty { parts.append(text) }
+        let piece = try transcriber.decode(chunk)
+        if !piece.text.isEmpty { parts.append(piece.text) }
+        fed += piece.samples
         pieces += 1
     }
 }

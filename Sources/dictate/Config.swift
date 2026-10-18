@@ -53,6 +53,9 @@ struct Config: Codable {
     /// at the quietest moment in the last part of each piece. The model drifts
     /// and repeats itself on longer single passes. 0 = never split.
     var chunkSeconds: Double = 30
+    /// Quiet stretches longer than this (seconds) are shortened to it before
+    /// decoding; the model spends as long on silence as on speech. 0 = keep all.
+    var maxPauseSeconds: Double = 0.6
     /// Recordings at least this long need Escape twice to cancel. 0 = always once.
     var cancelConfirmAfterSeconds: Double = 10
     /// Correct spellings of names and jargon. Matched fuzzily against the
@@ -130,6 +133,7 @@ struct Config: Codable {
         minimumSeconds = try c.decodeIfPresent(Double.self, forKey: .minimumSeconds) ?? d.minimumSeconds
         maximumSeconds = try c.decodeIfPresent(Double.self, forKey: .maximumSeconds) ?? d.maximumSeconds
         chunkSeconds = try c.decodeIfPresent(Double.self, forKey: .chunkSeconds) ?? d.chunkSeconds
+        maxPauseSeconds = try c.decodeIfPresent(Double.self, forKey: .maxPauseSeconds) ?? d.maxPauseSeconds
         cancelConfirmAfterSeconds = try c.decodeIfPresent(Double.self, forKey: .cancelConfirmAfterSeconds) ?? d.cancelConfirmAfterSeconds
         dictionary = try c.decodeIfPresent([String].self, forKey: .dictionary) ?? d.dictionary
         dictionaryThreshold = try c.decodeIfPresent(Double.self, forKey: .dictionaryThreshold) ?? d.dictionaryThreshold

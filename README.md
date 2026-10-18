@@ -113,6 +113,9 @@ security delete-identity -c dictate-dev                                 # if you
   Pieces are decoded while you are still talking, so stopping leaves only the
   last one: the wait after stop stays about a second however long you talk.
   Set 0 to disable.
+- Pauses longer than `maxPauseSeconds` (default 0.6) are shortened to it before
+  decoding, since the model spends as long on silence as on speech. The log
+  line shows how much audio was left. Set 0 to keep every pause.
 - `mode: "hold"` records only while the key is held. `holdHotkey` adds a
   second key that is always push-to-talk, e.g. `"right_command"` or `"fn"`,
   alongside the toggle key.
