@@ -6,19 +6,33 @@ let args = Array(CommandLine.arguments.dropFirst())
 
 switch args.first {
 case "transcribe":
-    // dictate transcribe <file.wav>  — offline check of the model without the mic.
-    guard args.count >= 2 else { fail("usage: dictate transcribe <file.wav>") }
+    // dictate transcribe [--live] <file.wav>  — offline check of the model without
+    // the mic. --live plays the file in at real time, decoding as a recording does.
+    let live = args.dropFirst().first == "--live"
+    let files = args.dropFirst().filter { $0 != "--live" }
+    guard files.count == 1 else { fail("usage: dictate transcribe [--live] <file.wav>") }
     let config = Config.load()
     do {
-        let pcm = try Wav.readMono16k(URL(fileURLWithPath: args[1]))
+        let pcm = try Wav.readMono16k(URL(fileURLWithPath: files[0]))
         let dictation = Dictation(config: config)
         let sem = DispatchSemaphore(value: 0)
-        dictation.text(from: pcm) { result in
+        let print: (Result<String, Error>) -> Void = { result in
             switch result {
-            case .success(let text): print(text)
+            case .success(let text): Swift.print(text)
             case .failure(let e): FileHandle.standardError.write("error: \(e)\n".data(using: .utf8)!)
             }
             sem.signal()
+        }
+        if live {
+            let t0 = Date()
+            let transcript = dictation.transcriber.begin { from in
+                let now = min(pcm.count, Int(Date().timeIntervalSince(t0) * Recorder.targetRate))
+                return from < now ? Array(pcm[from..<now]) : []
+            }
+            Thread.sleep(forTimeInterval: Double(pcm.count) / Recorder.targetRate)
+            transcript.finish(pcm) { print($0.map { config.postProcess($0) }) }
+        } else {
+            dictation.text(from: pcm, completion: print)
         }
         sem.wait()
         dictation.shutdown()

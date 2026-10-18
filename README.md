@@ -110,6 +110,8 @@ security delete-identity -c dictate-dev                                 # if you
 - Long recordings are transcribed in pieces of at most `chunkSeconds`
   (default 30), cut at the quietest moment near the end of each piece. The
   model drifts and repeats itself on a single pass much past half a minute.
+  Pieces are decoded while you are still talking, so stopping leaves only the
+  last one: the wait after stop stays about a second however long you talk.
   Set 0 to disable.
 - `mode: "hold"` records only while the key is held. `holdHotkey` adds a
   second key that is always push-to-talk, e.g. `"right_command"` or `"fn"`,
@@ -158,7 +160,7 @@ Commands:
 
 ```sh
 dictate                    # daemon (what launchd runs)
-dictate transcribe f.wav   # offline check without the mic
+dictate transcribe f.wav   # offline check without the mic (--live: play it in at real time)
 dictate listen             # record until you stop talking, print the text
 dictate fix "neo vim"      # apply dictionary + replacements to text
 dictate mics               # list input devices

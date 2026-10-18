@@ -7,6 +7,8 @@ final class Dictation {
     let recorder = Recorder()
     let transcriber: Transcriber
     private let mute = OutputMute()
+    /// The recording in progress (or just stopped), decoded as it comes in.
+    private var live: LiveTranscript?
 
     /// Read at each use; a new model path drops the loaded one.
     var config: Config {
@@ -22,10 +24,13 @@ final class Dictation {
     }
 
     /// Opens the menu bar pick (or config `microphone`, else the system
-    /// default) and starts loading the model so the stop is fast.
+    /// default), starts loading the model, and decodes full pieces as they
+    /// arrive so the stop is fast.
     func start() throws {
+        live = nil
         try recorder.start(device: AudioDevices.resolve(configured: config.microphone))
         transcriber.preload()
+        live = transcriber.begin { [recorder] in recorder.recorded(from: $0) }
     }
 
     /// Separate from `start` so the daemon's start sound is not muted.
@@ -36,6 +41,7 @@ final class Dictation {
     /// Releases the mic and the speaker mute; returns the audio and how long it ran.
     func stop() -> (pcm: [Float], seconds: TimeInterval) {
         let seconds = recorder.duration
+        live?.stop()
         let pcm = recorder.stop()
         mute.release()
         return (pcm, seconds)
@@ -46,17 +52,26 @@ final class Dictation {
         seconds < config.minimumSeconds
     }
 
-    /// Transcribes in pieces cut at quiet points, then post-processes.
-    /// Completion runs on the transcriber's queue.
+    /// Transcribes in pieces cut at quiet points, then post-processes. The
+    /// recording just stopped picks up from the pieces decoded while it ran;
+    /// other audio (a file) is decoded whole. Completion runs on the
+    /// transcriber's queue.
     func text(from pcm: [Float], completion: @escaping (Result<String, Error>) -> Void) {
-        transcriber.transcribe(pcm) { [transcriber] result in
+        let done: (Result<String, Error>) -> Void = { [transcriber] result in
             completion(result.map { transcriber.config.postProcess($0) })
+        }
+        if let live {
+            self.live = nil
+            live.finish(pcm, completion: done)
+        } else {
+            transcriber.transcribe(pcm, completion: done)
         }
     }
 
     /// Before exit: ggml's Metal teardown asserts if a model outlives exit().
     func shutdown() {
         _ = stop()
+        live = nil
         transcriber.unloadSync()
     }
 }

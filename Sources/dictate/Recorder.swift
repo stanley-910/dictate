@@ -77,6 +77,13 @@ final class Recorder {
         return out
     }
 
+    /// What has been recorded from sample `index` on, while recording goes on.
+    func recorded(from index: Int) -> [Float] {
+        lock.lock(); defer { lock.unlock() }
+        guard index < samples.count else { return [] }
+        return Array(samples[index...])
+    }
+
     private func teardown() {
         guard let q = queue else { return }
         queue = nil

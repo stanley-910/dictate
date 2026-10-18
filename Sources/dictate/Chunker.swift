@@ -9,14 +9,9 @@ enum Chunker {
     static let earliestCut = 0.6
 
     static func split(_ pcm: [Float], maxSeconds: Double, rate: Int) -> [[Float]] {
-        let maxLen = Int(maxSeconds * Double(rate))
-        guard maxSeconds > 0, pcm.count > maxLen else { return [pcm] }
-        let frame = max(1, Int(frameSeconds * Double(rate)))
-        let minLen = Int(Double(maxLen) * earliestCut)
         var pieces: [[Float]] = []
         var start = 0
-        while pcm.count - start > maxLen {
-            let cut = quietestPoint(pcm, from: start + minLen, to: start + maxLen, frame: frame)
+        while let cut = firstCut(pcm[start...], maxSeconds: maxSeconds, rate: rate) {
             pieces.append(Array(pcm[start..<cut]))
             start = cut
         }
@@ -24,9 +19,20 @@ enum Chunker {
         return pieces
     }
 
+    /// Where the first piece of `pcm` ends (an index into its base array), or
+    /// nil while it still fits in one piece. Depends only on the first
+    /// `maxSeconds`, so audio still arriving can be cut as it comes.
+    static func firstCut(_ pcm: ArraySlice<Float>, maxSeconds: Double, rate: Int) -> Int? {
+        let maxLen = Int(maxSeconds * Double(rate))
+        guard maxSeconds > 0, pcm.count > maxLen else { return nil }
+        let frame = max(1, Int(frameSeconds * Double(rate)))
+        let minLen = Int(Double(maxLen) * earliestCut)
+        return quietestPoint(pcm, from: pcm.startIndex + minLen, to: pcm.startIndex + maxLen, frame: frame)
+    }
+
     /// Index of the middle of the lowest-energy frame in `from..<to`. Ties go
     /// to the later frame so pieces stay as long as they can.
-    private static func quietestPoint(_ pcm: [Float], from: Int, to: Int, frame: Int) -> Int {
+    private static func quietestPoint(_ pcm: ArraySlice<Float>, from: Int, to: Int, frame: Int) -> Int {
         var best = to
         var bestEnergy = Float.greatestFiniteMagnitude
         var i = from
