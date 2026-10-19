@@ -36,6 +36,12 @@ struct EndOfSpeech {
     /// puts the onset threshold above most of their voice, and an answer was
     /// cut four words in (2026-10-19, AirPods by a fan).
     static let underSpeech: Float = 0.3
+    /// Only a speaker this close to the onset threshold (median of their loud
+    /// blocks under this many times it) gets the lower quiet line: that is the
+    /// mark of a floor measured too high. A speaker well above it keeps the
+    /// onset threshold, or a soft voice in an ordinary room would put the
+    /// quiet line under the room and never end.
+    static let nearThreshold: Float = 2
     /// Never quieter than this counts as speech going on.
     static let quietRMS: Float = 0.005
     /// Quiet is always anything under this many times the room's floor, so a
@@ -68,6 +74,7 @@ struct EndOfSpeech {
         guard heard, !loud.isEmpty else { return threshold }
         let sorted = loud.sorted()
         let speech = sorted[sorted.count / 2]
+        guard speech < threshold * Self.nearThreshold else { return threshold }
         return max(Self.quietRMS, (floor ?? 0) * Self.overFloorQuiet, min(threshold, speech * Self.underSpeech))
     }
 

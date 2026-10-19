@@ -176,9 +176,11 @@ from the same microphone as the daemon, stops after speech and then
 noise, measured as it records, so a fan or air conditioner does not keep it
 open; `--levels` prints each 100 ms block's level and the threshold to stderr), gives up after `--nothing-ms` (8000) with
 nothing heard, and stops at `--limit-ms` (60000) regardless. Once speech is
-heard, quiet is judged against the speaker's own level too (under 0.3 of the
-median of their loud blocks), so a room floor measured while they were
-already talking cannot end an answer mid-sentence. SIGUSR1 stops it and
+heard and the speaker sits barely above the speech threshold (their loud
+blocks' median under twice it, the mark of a floor measured too high, as by a
+fan), quiet is judged against their own level instead (under 0.3 of that
+median, never under 1.3 times the floor), so such a floor cannot end an
+answer mid-sentence. SIGUSR1 stops it and
 transcribes what was recorded, like the hotkey's second press. It writes `ready`
 to stderr once the mic is live, `stopped` once it is released (before
 transcribing) and the transcript to stdout (empty when
