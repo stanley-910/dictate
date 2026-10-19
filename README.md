@@ -180,7 +180,8 @@ heard, quiet is judged against the speaker's own level too (under 0.3 of the
 median of their loud blocks), so a room floor measured while they were
 already talking cannot end an answer mid-sentence. SIGUSR1 stops it and
 transcribes what was recorded, like the hotkey's second press. It writes `ready`
-to stderr once the mic is live and the transcript to stdout (empty when
+to stderr once the mic is live, `stopped` once it is released (before
+transcribing) and the transcript to stdout (empty when
 nothing was said). SIGTERM or SIGINT stops it at once with no output (exit
 143 or 130); errors are one line on stderr with exit 1. No sounds, pill, or
 paste, and it runs alongside the daemon.

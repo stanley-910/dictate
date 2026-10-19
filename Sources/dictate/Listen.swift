@@ -254,6 +254,8 @@ enum Listen {
         guard !ended, let d = dictation else { return }
         ended = true
         let (pcm, seconds) = d.stop()
+        // The mic is free from here: a caller timing a headset's switch back to playback starts now, not at exit.
+        FileHandle.standardError.write("stopped\n".data(using: .utf8)!)
         guard outcome == .speech, !d.isTooShort(seconds) else { teardown(code: 0); return }
         d.text(from: pcm) { result in
             DispatchQueue.main.async {

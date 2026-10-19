@@ -70,7 +70,8 @@ case "help", "-h", "--help":
     dictate config          print config path and effective config
     dictate listen          record until speech ends, print the transcript
             [--silence-ms 2000] [--nothing-ms 8000] [--limit-ms 60000] [--levels]
-            SIGUSR1 stops it and transcribes what was said
+            SIGUSR1 stops it and transcribes what was said; stderr says
+            "ready" once the mic is live and "stopped" once it is released
     dictate fix TEXT        apply dictionary and replacements to TEXT
     dictate mics            list input devices
     dictate version
