@@ -175,7 +175,11 @@ from the same microphone as the daemon, stops after speech and then
 `--silence-ms` (2000) of quiet (speech is sound well above the room's own
 noise, measured as it records, so a fan or air conditioner does not keep it
 open; `--levels` prints each 100 ms block's level and the threshold to stderr), gives up after `--nothing-ms` (8000) with
-nothing heard, and stops at `--limit-ms` (60000) regardless. It writes `ready`
+nothing heard, and stops at `--limit-ms` (60000) regardless. Once speech is
+heard, quiet is judged against the speaker's own level too (under 0.3 of the
+median of their loud blocks), so a room floor measured while they were
+already talking cannot end an answer mid-sentence. SIGUSR1 stops it and
+transcribes what was recorded, like the hotkey's second press. It writes `ready`
 to stderr once the mic is live and the transcript to stdout (empty when
 nothing was said). SIGTERM or SIGINT stops it at once with no output (exit
 143 or 130); errors are one line on stderr with exit 1. No sounds, pill, or

@@ -69,7 +69,8 @@ case "help", "-h", "--help":
     dictate transcribe FILE transcribe a WAV file (any rate; converted to 16 kHz mono)
     dictate config          print config path and effective config
     dictate listen          record until speech ends, print the transcript
-            [--silence-ms 2000] [--nothing-ms 8000] [--limit-ms 60000]
+            [--silence-ms 2000] [--nothing-ms 8000] [--limit-ms 60000] [--levels]
+            SIGUSR1 stops it and transcribes what was said
     dictate fix TEXT        apply dictionary and replacements to TEXT
     dictate mics            list input devices
     dictate version

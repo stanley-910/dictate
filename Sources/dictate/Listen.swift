@@ -29,6 +29,20 @@ struct EndOfSpeech {
     /// Sound above the threshold, in all, before it counts as speech: a click or
     /// a breath is one block.
     static let speechMinMs = 300
+    /// Once speech is heard, a block is quiet only below this share of the
+    /// speaker's own level (median of their loud blocks), when that is lower
+    /// than the onset threshold. A floor measured while someone was already
+    /// talking (they started right after the cue, the AirPods still waking)
+    /// puts the onset threshold above most of their voice, and an answer was
+    /// cut four words in (2026-10-19, AirPods by a fan).
+    static let underSpeech: Float = 0.3
+    /// Never quieter than this counts as speech going on.
+    static let quietRMS: Float = 0.005
+    /// Quiet is always anything under this many times the room's floor, so a
+    /// steady fan still ends the answer however loud the speaker was.
+    static let overFloorQuiet: Float = 1.3
+    /// Loud blocks kept for the speaker's level (5 s).
+    static let speechBlocks = 50
 
     var silenceMs = 2000
     var nothingMs = 8000
@@ -43,9 +57,19 @@ struct EndOfSpeech {
     /// Speech confirmed: stays so; the quiet after it is counted from here on.
     private(set) var heard = false
     private var quietMs = 0
+    /// The last loud blocks' levels: how loud this speaker is.
+    private var loud: [Float] = []
 
     /// The level a block must pass to count as speech.
     var threshold: Float { max(Self.speechRMS, (floor ?? 0) * Self.overFloor) }
+
+    /// Once speech is heard, the level a block must fall under to count as quiet.
+    var quietThreshold: Float {
+        guard heard, !loud.isEmpty else { return threshold }
+        let sorted = loud.sorted()
+        let speech = sorted[sorted.count / 2]
+        return max(Self.quietRMS, (floor ?? 0) * Self.overFloorQuiet, min(threshold, speech * Self.underSpeech))
+    }
 
     /// Feeds one block; returns an outcome once the recording should end.
     mutating func feed(rms: Float, ms: Int) -> Outcome? {
@@ -54,12 +78,14 @@ struct EndOfSpeech {
         let n = levels.count
         if let room = windowFloor() { floor = heard ? min(floor ?? room, room) : room }
         if heard {
-            if rms > threshold { quietMs = 0 } else { quietMs += ms }
+            if rms > threshold { remember(rms) }
+            if rms > quietThreshold { quietMs = 0 } else { quietMs += ms }
         } else if floor != nil {
             // Judged against the floor as it stands now: speech before the floor
             // was known counts once it is.
             let t = threshold
             if levels.reduce(0, { $1 > t ? $0 + ms : $0 }) >= Self.speechMinMs {
+                for l in levels where l > t { remember(l) }
                 heard = true
                 let lastLoud = levels.lastIndex { $0 > t } ?? (n - 1)
                 quietMs = (n - 1 - lastLoud) * ms
@@ -70,6 +96,11 @@ struct EndOfSpeech {
         if !heard && elapsedMs >= nothingMs { return .nothing }
         if elapsedMs >= limitMs { return heard ? .speech : .nothing }
         return nil
+    }
+
+    private mutating func remember(_ rms: Float) {
+        loud.append(rms)
+        if loud.count > Self.speechBlocks { loud.removeFirst(loud.count - Self.speechBlocks) }
     }
 
     /// Quietest 300 ms average in the last 5 s, skipping the warm-up and dead blocks.
@@ -124,6 +155,7 @@ enum Listen {
         dictation = d
         trap(SIGINT, code: 130)
         trap(SIGTERM, code: 143)
+        finishOn(SIGUSR1)
 
         d.recorder.onLevel = { rms, frames in
             let ms = frames * 1000 / Int(Recorder.targetRate)
@@ -195,6 +227,16 @@ enum Listen {
         signalSources.append(source)
     }
 
+    /// SIGUSR1: the speaker is done; stop and transcribe what was recorded, as
+    /// the hotkey's second press does, whatever the detector thinks.
+    private static func finishOn(_ sig: Int32) {
+        signal(sig, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+        source.setEventHandler { end(.speech) }
+        source.resume()
+        signalSources.append(source)
+    }
+
     private static func block(rms: Float, ms: Int) {
         guard !ended else { return }
         if !readySent {
@@ -203,7 +245,7 @@ enum Listen {
         }
         let outcome = detector.feed(rms: rms, ms: ms)
         if traceLevels {
-            FileHandle.standardError.write(String(format: "level %.4f threshold %.4f\n", rms, detector.threshold).data(using: .utf8)!)
+            FileHandle.standardError.write(String(format: "level %.4f threshold %.4f quiet %.4f\n", rms, detector.threshold, detector.quietThreshold).data(using: .utf8)!)
         }
         if let outcome { end(outcome) }
     }
