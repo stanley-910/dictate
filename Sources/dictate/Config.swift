@@ -206,6 +206,14 @@ struct Config: Codable {
         set { UserDefaults.standard.set(newValue?.rawValue, forKey: styleKey) }
     }
 
+    private static let muteKey = "muteSounds"
+
+    /// Menu > Mute Sounds, stored in app defaults; on silences every sound.
+    static var soundsMuted: Bool {
+        get { UserDefaults.standard.bool(forKey: muteKey) }
+        set { UserDefaults.standard.set(newValue, forKey: muteKey) }
+    }
+
     /// This config with the menu pick applied over it; the daemon only.
     var withMenuPicks: Config {
         var c = self

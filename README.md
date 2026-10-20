@@ -94,7 +94,7 @@ Quit from the menu bar (or `launchctl bootout` as above), then:
 ```sh
 rm -rf ~/Applications/Dictate.app ~/Library/LaunchAgents/cc.stanleywang.dictate.plist
 rm -rf ~/.local/share/dictate ~/.config/dictate ~/.local/state/dictate  # model, config, logs
-defaults delete cc.stanleywang.dictate                                  # microphone and style picks, pill position
+defaults delete cc.stanleywang.dictate                                  # microphone, style and mute picks, pill position
 tccutil reset Accessibility cc.stanleywang.dictate
 tccutil reset Microphone cc.stanleywang.dictate
 security delete-identity -c dictate-dev                                 # if you ran make-cert.sh
@@ -141,7 +141,8 @@ security delete-identity -c dictate-dev                                 # if you
   points from the edge. Drag the pill to put it anywhere; the dragged spot
   sticks until `indicatorPosition` changes.
 - The menu bar item has Copy Config Path for opening the file in an editor.
-- `sounds: false` silences everything; `soundPack` names a sound per event
+- `sounds: false` silences everything, as does menu bar > Mute Sounds (stored
+  in app defaults); `soundPack` names a sound per event
   (`start`, `stop`, `cancel`, `arm`), each a name from /System/Library/Sounds
   or a file path; `null` skips that one.
 - A floating pill above the Dock shows a live waveform while recording

@@ -157,7 +157,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             indicator.margin = config.indicatorMargin
             indicator.show(.recording)
         }
-        if config.sounds { Sounds.play(config.soundPack.start) }
+        playSound(config.soundPack.start)
         dictation.muteSpeakersIfConfigured()
         maxTimer?.invalidate()
         maxTimer = Timer.scheduledTimer(withTimeInterval: config.maximumSeconds, repeats: false) { [weak self] _ in
@@ -181,7 +181,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         cancelArmed = true
         setIcon("●", color: .systemYellow)
         indicator.mode = .armed
-        if config.sounds { Sounds.play(config.soundPack.arm) }
+        playSound(config.soundPack.arm)
         cancelArmTimer?.invalidate()
         cancelArmTimer = Timer.scheduledTimer(withTimeInterval: confirmWindow, repeats: false) { [weak self] _ in
             guard let self, self.state == .recording else { return }
@@ -203,7 +203,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         state = .idle
         setIcon("○")
         indicator.hide()
-        if config.sounds { Sounds.play(config.soundPack.cancel) }
+        playSound(config.soundPack.cancel)
         log("cancelled")
     }
 
@@ -222,7 +222,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         state = .transcribing
         setIcon("◐", color: .systemOrange)
         indicator.mode = .transcribing
-        if config.sounds { Sounds.play(config.soundPack.stop) }
+        playSound(config.soundPack.stop)
         dictation.text(from: pcm) { [weak self] result in
             DispatchQueue.main.async { self?.finish(result) }
         }
@@ -273,6 +273,10 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         styleMenu.delegate = self
         styleItem.submenu = styleMenu
         menu.addItem(styleItem)
+        let muteItem = NSMenuItem(title: "Mute Sounds", action: #selector(toggleMute(_:)), keyEquivalent: "")
+        muteItem.target = self
+        muteItem.state = Config.soundsMuted ? .on : .off
+        menu.addItem(muteItem)
         menu.addItem(NSMenuItem.separator())
         let copyPath = NSMenuItem(title: "Copy Config Path", action: #selector(copyConfigPath), keyEquivalent: "")
         copyPath.target = self
@@ -292,6 +296,10 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func beep() { NSSound.beep() }
+
+    private func playSound(_ name: String?) {
+        if config.sounds && !Config.soundsMuted { Sounds.play(name) }
+    }
 
     // MARK: menus
 
@@ -321,6 +329,12 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Config.pickedStyle = Config.Style(rawValue: raw)
         dictation.config = config.withMenuPicks
         log("style: \(raw)")
+    }
+
+    @objc private func toggleMute(_ sender: NSMenuItem) {
+        Config.soundsMuted.toggle()
+        sender.state = Config.soundsMuted ? .on : .off
+        log(Config.soundsMuted ? "sounds muted" : "sounds unmuted")
     }
 
     /// Rebuilt each time the submenu opens so newly plugged devices show up.
