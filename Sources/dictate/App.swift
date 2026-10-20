@@ -10,6 +10,8 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let indicator = Indicator()
     private var listener: HotkeyListener?
     private var statusItem: NSStatusItem?
+    private let micMenu = NSMenu(title: "Microphone")
+    private let styleMenu = NSMenu(title: "Style")
     private var state: State = .idle
     private var maxTimer: Timer?
     private var reloadTimer: Timer?
@@ -22,7 +24,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     init(config: Config) {
         self.config = config
-        self.dictation = Dictation(config: config)
+        self.dictation = Dictation(config: config.withMenuPicks)
         super.init()
         if config.indicator {
             dictation.recorder.onLevel = { [indicator] level, _ in indicator.push(level: level) }
@@ -60,7 +62,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         configModified = now
         let old = config
         config = Config.load()
-        dictation.config = config
+        dictation.config = config.withMenuPicks
         dictation.recorder.onLevel = config.indicator ? { [indicator] level, _ in indicator.push(level: level) } : nil
         if config.hotkey != old.hotkey || config.holdHotkey != old.holdHotkey || config.mode != old.mode {
             listener?.stop()
@@ -259,10 +261,14 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: "Dictate", action: nil, keyEquivalent: "")
         menu.addItem(NSMenuItem.separator())
         let micItem = NSMenuItem(title: "Microphone", action: nil, keyEquivalent: "")
-        let micMenu = NSMenu(title: "Microphone")
         micMenu.delegate = self
         micItem.submenu = micMenu
         menu.addItem(micItem)
+        menu.addItem(NSMenuItem.separator())
+        let styleItem = NSMenuItem(title: "Style", action: nil, keyEquivalent: "")
+        styleMenu.delegate = self
+        styleItem.submenu = styleMenu
+        menu.addItem(styleItem)
         menu.addItem(NSMenuItem.separator())
         let copyPath = NSMenuItem(title: "Copy Config Path", action: #selector(copyConfigPath), keyEquivalent: "")
         copyPath.target = self
@@ -283,10 +289,39 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func beep() { NSSound.beep() }
 
-    // MARK: microphone menu
+    // MARK: menus
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        switch menu {
+        case micMenu: updateMicrophoneMenu()
+        case styleMenu: updateStyleMenu()
+        default: break
+        }
+    }
+
+    /// No checkmark when the config file sets a mix no preset matches.
+    private func updateStyleMenu() {
+        styleMenu.removeAllItems()
+        let current = config.withMenuPicks.style
+        for style in Config.Style.allCases {
+            let item = NSMenuItem(title: style.title, action: #selector(pickStyle(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = style.rawValue
+            item.state = style == current ? .on : .off
+            styleMenu.addItem(item)
+        }
+    }
+
+    @objc private func pickStyle(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String else { return }
+        Config.pickedStyle = Config.Style(rawValue: raw)
+        dictation.config = config.withMenuPicks
+        log("style: \(raw)")
+    }
 
     /// Rebuilt each time the submenu opens so newly plugged devices show up.
-    func menuNeedsUpdate(_ menu: NSMenu) {
+    private func updateMicrophoneMenu() {
+        let menu = micMenu
         menu.removeAllItems()
         let picked = AudioDevices.selectedUID ?? config.microphone
         let effective = AudioDevices.resolve(configured: config.microphone)

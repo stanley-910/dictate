@@ -94,7 +94,7 @@ Quit from the menu bar (or `launchctl bootout` as above), then:
 ```sh
 rm -rf ~/Applications/Dictate.app ~/Library/LaunchAgents/cc.stanleywang.dictate.plist
 rm -rf ~/.local/share/dictate ~/.config/dictate ~/.local/state/dictate  # model, config, logs
-defaults delete cc.stanleywang.dictate                                  # microphone pick, pill position
+defaults delete cc.stanleywang.dictate                                  # microphone and style picks, pill position
 tccutil reset Accessibility cc.stanleywang.dictate
 tccutil reset Microphone cc.stanleywang.dictate
 security delete-identity -c dictate-dev                                 # if you ran make-cert.sh
@@ -129,6 +129,11 @@ security delete-identity -c dictate-dev                                 # if you
   transcript stays there first, so a clipboard history manager can catch it.
   `casing` is `model` (as transcribed), `lower` (everything lowercase;
   dictionary terms keep their casing) or `sentence` (first letter uppercased).
+  `endPeriod: false` drops the period that ends the transcript; periods inside
+  it, `?`, `!` and `...` stay. Menu bar > Style picks a preset over both:
+  Formal (as transcribed), Casual (no end period) or Very Casual (lowercase,
+  no end period). The pick is stored in app defaults and overrides the config
+  file.
 - `muteSpeakersWhileRecording: true` mutes the speakers for the recording so
   music or a call does not reach the mic, and restores them after.
 - `indicatorPosition` anchors the waveform pill: `bottom` (default), `top`,

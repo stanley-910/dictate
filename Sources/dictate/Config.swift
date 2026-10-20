@@ -34,6 +34,8 @@ struct Config: Codable {
     /// "model" keeps the model's casing, "lower" lowercases everything
     /// (dictionary terms keep theirs), "sentence" only uppercases the first letter.
     var casing: Casing = .model
+    /// false drops the period that ends the transcript; periods inside it stay.
+    var endPeriod: Bool = true
     /// Mute the speakers while recording so playback stays out of the mic; restored afterwards.
     var muteSpeakersWhileRecording: Bool = false
     /// Show the floating waveform pill while recording.
@@ -75,6 +77,27 @@ struct Config: Codable {
 
     enum Delivery: String, Codable { case paste, copy, send }
     enum Casing: String, Codable { case model, lower, sentence }
+
+    /// Menu presets over `casing` and `endPeriod`.
+    enum Style: String, CaseIterable {
+        case formal, casual
+        case veryCasual = "very-casual"
+
+        var title: String {
+            switch self {
+            case .formal: "Formal"
+            case .casual: "Casual"
+            case .veryCasual: "Very Casual"
+            }
+        }
+        var casing: Casing { self == .veryCasual ? .lower : .model }
+        var endPeriod: Bool { self == .formal }
+    }
+
+    /// The preset matching `casing` and `endPeriod`, if any.
+    var style: Style? {
+        Style.allCases.first { $0.casing == casing && $0.endPeriod == endPeriod }
+    }
     enum IndicatorPosition: String, Codable {
         case bottom, top
         case topLeft = "top-left", topRight = "top-right"
@@ -125,6 +148,7 @@ struct Config: Codable {
         restoreClipboard = try c.decodeIfPresent(Bool.self, forKey: .restoreClipboard) ?? d.restoreClipboard
         restoreClipboardAfterSeconds = try c.decodeIfPresent(Double.self, forKey: .restoreClipboardAfterSeconds) ?? d.restoreClipboardAfterSeconds
         casing = try c.decodeIfPresent(Casing.self, forKey: .casing) ?? d.casing
+        endPeriod = try c.decodeIfPresent(Bool.self, forKey: .endPeriod) ?? d.endPeriod
         muteSpeakersWhileRecording = try c.decodeIfPresent(Bool.self, forKey: .muteSpeakersWhileRecording) ?? d.muteSpeakersWhileRecording
         indicator = try c.decodeIfPresent(Bool.self, forKey: .indicator) ?? d.indicator
         indicatorPosition = try c.decodeIfPresent(IndicatorPosition.self, forKey: .indicatorPosition) ?? d.indicatorPosition
@@ -166,7 +190,30 @@ struct Config: Codable {
         if casing == .sentence, let first = out.first, first.isLowercase {
             out = first.uppercased() + out.dropFirst()
         }
+        if !endPeriod {
+            out = out.trimmingCharacters(in: .whitespaces)
+            // A single period only; "..." is a deliberate trail-off.
+            if out.hasSuffix("."), !out.hasSuffix("..") { out.removeLast() }
+        }
         return out
+    }
+
+    private static let styleKey = "style"
+
+    /// Menu pick stored in app defaults; nil = follow the config file.
+    static var pickedStyle: Style? {
+        get { UserDefaults.standard.string(forKey: styleKey).flatMap(Style.init(rawValue:)) }
+        set { UserDefaults.standard.set(newValue?.rawValue, forKey: styleKey) }
+    }
+
+    /// This config with the menu pick applied over it; the daemon only.
+    var withMenuPicks: Config {
+        var c = self
+        if let style = Config.pickedStyle {
+            c.casing = style.casing
+            c.endPeriod = style.endPeriod
+        }
+        return c
     }
 
     /// Modification time of the resolved config file, for live reload.
