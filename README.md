@@ -182,7 +182,8 @@ from the same microphone as the daemon, stops after speech and then
 noise, measured as it records, so a fan or air conditioner does not keep it
 open; `--levels` prints each 100 ms block's level and the threshold to stderr), gives up after `--nothing-ms` (8000) with
 nothing heard, and stops at `--limit-ms` (60000) regardless. Quiet is
-anything under the speech threshold. SIGUSR1 stops it and
+anything under the speech threshold. SIGUSR1, or a headset's mute gesture
+(an AirPods press, macOS 14's input mute handler; `--levels` prints `muted`), stops it and
 transcribes what was recorded, like the hotkey's second press. It writes `ready`
 to stderr once the mic is live, `stopped` once it is released (before
 transcribing) and the transcript to stdout (empty when

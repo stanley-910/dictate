@@ -130,6 +130,7 @@ enum Listen {
         trap(SIGINT, code: 130)
         trap(SIGTERM, code: 143)
         finishOn(SIGUSR1)
+        finishOnMute()
 
         d.recorder.onLevel = { rms, frames in
             let ms = frames * 1000 / Int(Recorder.targetRate)
@@ -209,6 +210,21 @@ enum Listen {
         source.setEventHandler { end(.speech) }
         source.resume()
         signalSources.append(source)
+    }
+
+    /// An AirPods press (or another headset's mute gesture) while the mic is
+    /// open asks to mute it; here it means the speaker is done, as SIGUSR1
+    /// does. Unregistered, macOS mutes the input instead and no press reaches
+    /// us. Zeros alone could not tell this from a dropped stream (Recorder).
+    private static func finishOnMute() {
+        _ = try? AVAudioApplication.shared.setInputMuteStateChangeHandler { muted in
+            guard muted else { return true }
+            DispatchQueue.main.async {
+                if traceLevels { FileHandle.standardError.write("muted\n".data(using: .utf8)!) }
+                end(.speech)
+            }
+            return true
+        }
     }
 
     private static func block(rms: Float, ms: Int) {
