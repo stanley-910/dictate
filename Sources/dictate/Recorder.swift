@@ -16,9 +16,19 @@ final class Recorder {
     private var samples: [Float] = []
     private let lock = NSLock()
     private(set) var startedAt: Date?
+    private var device: AudioInputDevice?
+    private var reopens = 0
+    // Touched only on `callbackQueue`.
+    private var heardSound = false
+    private var silentFrames = 0
     static let targetRate: Double = 16_000
     private static let bufferCount = 3
     private static let bufferFrames: UInt32 = 1_600  // 100 ms
+    /// Digital silence this long after real sound means the input died: a
+    /// Bluetooth headset the Mac did not own when recording started can drop
+    /// its mic stream when our start sound finishes, feeding zeros from then on.
+    private static let deadSeconds = 0.5
+    private static let maxReopens = 3
     /// Linear RMS of each chunk and its length in frames, called on the audio thread.
     var onLevel: ((_ rms: Float, _ frames: Int) -> Void)?
 
@@ -31,7 +41,14 @@ final class Recorder {
     func start(device: AudioInputDevice? = nil) throws {
         teardown()
         lock.lock(); samples.removeAll(keepingCapacity: true); lock.unlock()
+        self.device = device
+        reopens = 0
+        try open()
+        startedAt = Date()
+    }
 
+    private func open() throws {
+        callbackQueue.sync { heardSound = false; silentFrames = 0 }
         var format = AudioStreamBasicDescription(
             mSampleRate: Recorder.targetRate, mFormatID: kAudioFormatLinearPCM,
             mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
@@ -64,7 +81,16 @@ final class Recorder {
             throw DictateError.audio("cannot start \(device?.name ?? "default input") (\(status))")
         }
         queue = q
-        startedAt = Date()
+    }
+
+    /// Reopens the device after its input died, keeping what was recorded.
+    /// On main, like `start` and `stop`.
+    private func reopen() {
+        guard queue != nil, reopens < Recorder.maxReopens else { return }
+        reopens += 1
+        log("input went silent; reopening \(device?.name ?? "default input")")
+        teardown()
+        do { try open() } catch { log("\(error)") }
     }
 
     /// Stops capture and returns everything recorded so far.
@@ -97,10 +123,20 @@ final class Recorder {
         let chunk = Array(UnsafeBufferPointer(
             start: buffer.pointee.mAudioData.assumingMemoryBound(to: Float.self), count: count))
         lock.lock(); samples.append(contentsOf: chunk); lock.unlock()
-        if let onLevel {
-            var sum: Float = 0
-            for v in chunk { sum += v * v }
-            onLevel(sqrt(sum / Float(count)), count)
+        var sum: Float = 0
+        for v in chunk { sum += v * v }
+        let rms = sqrt(sum / Float(count))
+        onLevel?(rms, count)
+        // Far below any live mic's noise floor; a dropped stream reads as zeros.
+        if rms > 1e-6 {
+            heardSound = true
+            silentFrames = 0
+        } else if heardSound {
+            silentFrames += count
+            if Double(silentFrames) >= Recorder.deadSeconds * Recorder.targetRate {
+                silentFrames = 0
+                DispatchQueue.main.async { [weak self] in self?.reopen() }
+            }
         }
     }
 }
