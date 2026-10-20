@@ -77,52 +77,6 @@ struct EndOfSpeech {
         return nil
     }
 
-    /// Quietest 300 ms average of the last 5 s, warm-up and dead blocks left out:
-    /// the room with nobody talking. Once speech is confirmed it only falls, so
-    /// the dips between words in a long answer never become the room.
-    private(set) var floor: Float?
-    /// Speech confirmed: stays so; the quiet after it is counted from here on.
-    private(set) var heard = false
-    private var quietMs = 0
-
-    /// The level a block must pass to count as speech.
-    var threshold: Float { max(Self.speechRMS, (floor ?? 0) * Self.overFloor) }
-
-    /// The level a block must fall under to count as quiet: the same line as
-    /// speech. A lower line for a soft speaker (2026-10-19) sat inside the
-    /// room's own noise and kept answers open to the 60 s cap (2026-10-20).
-    var quietThreshold: Float { threshold }
-
-    /// Feeds one block; returns an outcome once the recording should end.
-    mutating func feed(rms: Float, ms: Int) -> Outcome? {
-        blockMs = ms
-        levels.append(rms)
-        let n = levels.count
-        if let room = windowFloor() { floor = heard ? min(floor ?? room, room) : room }
-        if heard {
-            if rms > quietThreshold { quietMs = 0 } else { quietMs += ms }
-        } else if floor != nil {
-            // Judged against the floor as it stands now: speech before the floor
-            // was known counts once it is.
-            let t = threshold
-            if levels.reduce(0, { $1 > t ? $0 + ms : $0 }) >= Self.speechMinMs {
-                heard = true
-                let lastLoud = levels.lastIndex { $0 > t } ?? (n - 1)
-                quietMs = (n - 1 - lastLoud) * ms
-            }
-        }
-        let elapsedMs = n * ms
-        if heard && quietMs >= silenceMs { return .speech }
-        if !heard && elapsedMs >= nothingMs { return .nothing }
-        if elapsedMs >= limitMs { return heard ? .speech : .nothing }
-        return nil
-    }
-
-    private mutating func remember(_ rms: Float) {
-        loud.append(rms)
-        if loud.count > Self.speechBlocks { loud.removeFirst(loud.count - Self.speechBlocks) }
-    }
-
     /// Quietest 300 ms average in the last 5 s, skipping the warm-up and dead blocks.
     private func windowFloor() -> Float? {
         let n = levels.count
