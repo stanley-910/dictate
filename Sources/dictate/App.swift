@@ -21,10 +21,13 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Modifiers held when the recording was stopped.
     private var stopFlags: CGEventFlags = []
     private var pressedAt: Date?
+    /// `config.deliveryModifierFlags`, kept apart for the tap's thread.
+    private var deliveryFlags: CGEventFlags = []
 
     init(config: Config) {
         self.config = config
         self.dictation = Dictation(config: config.withMenuPicks)
+        self.deliveryFlags = config.deliveryModifierFlags
         super.init()
         if config.indicator {
             dictation.recorder.onLevel = { [indicator] level, _ in indicator.push(level: level) }
@@ -63,6 +66,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let old = config
         config = Config.load()
         dictation.config = config.withMenuPicks
+        deliveryFlags = config.deliveryModifierFlags
         dictation.recorder.onLevel = config.indicator ? { [indicator] level, _ in indicator.push(level: level) } : nil
         if config.hotkey != old.hotkey || config.holdHotkey != old.holdHotkey || config.mode != old.mode {
             listener?.stop()
@@ -87,7 +91,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         l.toleratedModifiers = { [weak self] in
             guard let self, self.state == .recording else { return [] }
-            return self.config.deliveryModifierFlags
+            return self.deliveryFlags
         }
         do {
             try l.start()

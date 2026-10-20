@@ -79,6 +79,9 @@ final class HotkeyListener {
     var toleratedModifiers: () -> CGEventFlags = { [] }
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    /// The tap's own thread, so keys pass through while main is busy (opening
+    /// a Bluetooth mic can hold it for 150 ms).
+    private var runLoop: CFRunLoop?
     /// Modifier flags on the last key event the tap saw, i.e. what apps see
     /// after Karabiner and friends have remapped.
     private(set) var lastFlags: CGEventFlags = []
@@ -94,9 +97,13 @@ final class HotkeyListener {
 
     func stop() {
         if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
-        if let runLoopSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes) }
+        if let runLoop {
+            if let runLoopSource { CFRunLoopRemoveSource(runLoop, runLoopSource, .commonModes) }
+            CFRunLoopStop(runLoop)
+        }
         tap = nil
         runLoopSource = nil
+        runLoop = nil
     }
 
     func start() throws {
@@ -118,7 +125,19 @@ final class HotkeyListener {
         self.tap = tap
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         runLoopSource = source
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        let ready = DispatchSemaphore(value: 0)
+        var loop: CFRunLoop?
+        let thread = Thread {
+            loop = CFRunLoopGetCurrent()
+            CFRunLoopAddSource(loop, source, .commonModes)
+            ready.signal()
+            CFRunLoopRun()
+        }
+        thread.name = "dictate.hotkey"
+        thread.qualityOfService = .userInteractive
+        thread.start()
+        ready.wait()
+        runLoop = loop
         CGEvent.tapEnable(tap: tap, enable: true)
     }
 
