@@ -161,6 +161,14 @@ security delete-identity -c dictate-dev                                 # if you
 - `replacements` run after the dictionary: whole-word, case-insensitive,
   in order; set `"regex": true` on an entry to use a regular expression.
   Use these for rewrites that are not spelling fixes, e.g. "pie" -> "Pi".
+- Menu bar > Dictionary (Cmd-D while the menu is open) edits `dictionary`
+  in a window, one term per line; Save writes the config file (keys come
+  out sorted and pretty-printed, a symlinked file stays a link).
+- Menu bar > Cheat Sheet lists the plain replacements, then each phrase in
+  `cheatSheet` with what the replacements turn it into now; picking a row
+  copies the result. Handy for a spoken grammar built from regex rules,
+  such as emoticons: `"cheatSheet": ["smile face", "wink tongue face"]`
+  shows `:)` and `;P` beside them.
 - Config keys that are missing take their defaults, so `{}` is valid.
   The file is watched: edits apply within about 2 s without a restart, and
   hotkey changes rebind. A recording in progress is never interrupted.

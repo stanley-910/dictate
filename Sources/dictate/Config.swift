@@ -67,6 +67,9 @@ struct Config: Codable {
     var dictionaryThreshold: Double = 0.8
     /// Ordered, case-insensitive whole-word replacements applied after the dictionary.
     var replacements: [Replacement] = []
+    /// Spoken phrases listed in menu bar > Cheat Sheet with what the
+    /// replacements turn them into, e.g. "wink smile face" -> ";)".
+    var cheatSheet: [String] = []
 
     struct SoundPack: Codable {
         var start: String? = "Tink"
@@ -162,6 +165,7 @@ struct Config: Codable {
         dictionary = try c.decodeIfPresent([String].self, forKey: .dictionary) ?? d.dictionary
         dictionaryThreshold = try c.decodeIfPresent(Double.self, forKey: .dictionaryThreshold) ?? d.dictionaryThreshold
         replacements = try c.decodeIfPresent([Replacement].self, forKey: .replacements) ?? d.replacements
+        cheatSheet = try c.decodeIfPresent([String].self, forKey: .cheatSheet) ?? d.cheatSheet
     }
 
     static var path: URL {
@@ -180,6 +184,27 @@ struct Config: Codable {
             log("config: \(path.path) failed to parse: \(error); using defaults")
             return Config()
         }
+    }
+
+    /// Writes `dictionary` into the config file, leaving every other key's
+    /// value as it is (keys come out sorted). Goes through the symlink, so a
+    /// dotfiles link stays a link. Refuses a file that does not parse rather
+    /// than overwrite it.
+    static func saveDictionary(_ terms: [String]) throws {
+        let url = path.resolvingSymlinksInPath()
+        var object: [String: JSONValue] = [:]
+        if let data = try? Data(contentsOf: url) {
+            guard case .object(let parsed) = try JSONDecoder().decode(JSONValue.self, from: data) else {
+                throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: url.path])
+            }
+            object = parsed
+        } else {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        }
+        object["dictionary"] = .array(terms.map { .string($0) })
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try (encoder.encode(JSONValue.object(object)) + Data("\n".utf8)).write(to: url, options: .atomic)
     }
 
     /// Dictionary then replacements, in that order.
@@ -231,6 +256,35 @@ struct Config: Codable {
 
     var modelURL: URL {
         URL(fileURLWithPath: (model as NSString).expandingTildeInPath)
+    }
+}
+
+/// Any JSON, for rewriting one key of the config file without dropping keys
+/// this version does not know. Unlike JSONSerialization, numbers come back
+/// as written (0.8, not 0.80000000000000004).
+enum JSONValue: Codable {
+    case null, bool(Bool), number(Double), string(String), array([JSONValue]), object([String: JSONValue])
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { self = .null }
+        else if let v = try? c.decode(Bool.self) { self = .bool(v) }
+        else if let v = try? c.decode(Double.self) { self = .number(v) }
+        else if let v = try? c.decode(String.self) { self = .string(v) }
+        else if let v = try? c.decode([JSONValue].self) { self = .array(v) }
+        else { self = .object(try c.decode([String: JSONValue].self)) }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .null: try c.encodeNil()
+        case .bool(let v): try c.encode(v)
+        case .number(let v): try c.encode(v)
+        case .string(let v): try c.encode(v)
+        case .array(let v): try c.encode(v)
+        case .object(let v): try c.encode(v)
+        }
     }
 }
 

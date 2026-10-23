@@ -12,6 +12,8 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private let micMenu = NSMenu(title: "Microphone")
     private let styleMenu = NSMenu(title: "Style")
+    private let cheatMenu = NSMenu(title: "Cheat Sheet")
+    private let dictionaryWindow = DictionaryWindow()
     private var state: State = .idle
     private var maxTimer: Timer?
     private var reloadTimer: Timer?
@@ -36,6 +38,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
+        setupMainMenu()
         requestPermissions()
         startListening()
         configModified = Config.modified
@@ -278,6 +281,14 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         muteItem.state = Config.soundsMuted ? .on : .off
         menu.addItem(muteItem)
         menu.addItem(NSMenuItem.separator())
+        let cheatItem = NSMenuItem(title: "Cheat Sheet", action: nil, keyEquivalent: "")
+        cheatMenu.delegate = self
+        cheatItem.submenu = cheatMenu
+        menu.addItem(cheatItem)
+        let dictItem = NSMenuItem(title: "Dictionary…", action: #selector(showDictionary), keyEquivalent: "d")
+        dictItem.target = self
+        menu.addItem(dictItem)
+        menu.addItem(NSMenuItem.separator())
         let copyPath = NSMenuItem(title: "Copy Config Path", action: #selector(copyConfigPath), keyEquivalent: "")
         copyPath.target = self
         menu.addItem(copyPath)
@@ -286,6 +297,30 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.menu = menu
         statusItem = item
         setIcon("○")
+    }
+
+    /// Never shown (the app has no Dock icon or menu bar of its own), but key
+    /// equivalents route through it: without Edit, Cmd-V does nothing in the
+    /// Dictionary window.
+    private func setupMainMenu() {
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        editItem.submenu = edit
+        let main = NSMenu()
+        main.addItem(NSMenuItem(title: "Dictate", action: nil, keyEquivalent: ""))
+        main.addItem(editItem)
+        NSApp.mainMenu = main
+    }
+
+    @objc private func showDictionary() {
+        dictionaryWindow.show()
     }
 
     private func setIcon(_ glyph: String, color: NSColor = .labelColor) {
@@ -307,6 +342,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch menu {
         case micMenu: updateMicrophoneMenu()
         case styleMenu: updateStyleMenu()
+        case cheatMenu: updateCheatMenu()
         default: break
         }
     }
@@ -322,6 +358,40 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.state = style == current ? .on : .off
             styleMenu.addItem(item)
         }
+    }
+
+    /// Plain replacements as written, then each `cheatSheet` phrase run
+    /// through the replacements, so the list always shows what dictating it
+    /// gives now. Picking a row copies the result.
+    private func updateCheatMenu() {
+        cheatMenu.removeAllItems()
+        var rows = config.replacements.filter { $0.regex != true }.map { ($0.from, $0.to) }
+        let phrases = config.cheatSheet.map { ($0, Replacements.apply($0, rules: config.replacements)) }
+        let width = (rows + phrases).map { $0.0.count }.max() ?? 0
+        if !rows.isEmpty, !phrases.isEmpty { rows.append(("", "")) }
+        for (said, result) in rows + phrases {
+            if said.isEmpty {
+                cheatMenu.addItem(NSMenuItem.separator())
+                continue
+            }
+            let item = NSMenuItem(title: "", action: #selector(copyCheat(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = result
+            item.attributedTitle = NSAttributedString(
+                string: said.padding(toLength: width + 2, withPad: " ", startingAt: 0) + result,
+                attributes: [.font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)])
+            cheatMenu.addItem(item)
+        }
+        if cheatMenu.items.isEmpty {
+            let empty = NSMenuItem(title: "None", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            cheatMenu.addItem(empty)
+        }
+    }
+
+    @objc private func copyCheat(_ sender: NSMenuItem) {
+        guard let result = sender.representedObject as? String else { return }
+        Paster.copy(result)
     }
 
     @objc private func pickStyle(_ sender: NSMenuItem) {
