@@ -130,7 +130,6 @@ enum Listen {
         trap(SIGINT, code: 130)
         trap(SIGTERM, code: 143)
         finishOn(SIGUSR1)
-        finishOnMute()
 
         d.recorder.onLevel = { rms, frames in
             let ms = frames * 1000 / Int(Recorder.targetRate)
@@ -143,6 +142,7 @@ enum Listen {
             fail("\(error)")
         }
         d.muteSpeakersIfConfigured()
+        finishOnMute()
         // Backstop in case the device never delivers a buffer.
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(detector.limitMs + 1000)) {
             end(detector.heard ? .speech : .nothing)
@@ -216,16 +216,27 @@ enum Listen {
     /// open asks to mute it; here it means the speaker is done, as SIGUSR1
     /// does. Unregistered, macOS mutes the input instead and no press reaches
     /// us. Zeros alone could not tell this from a dropped stream (Recorder).
+    /// Registered once the mic is recording, and with the state notification
+    /// observed too: registered before it, macOS took the handler but still
+    /// rejected the press as not opted in (2026-10-20).
     private static func finishOnMute() {
-        _ = try? AVAudioApplication.shared.setInputMuteStateChangeHandler { muted in
-            guard muted else { return true }
+        let onMute = {
             DispatchQueue.main.async {
                 if traceLevels { FileHandle.standardError.write("muted\n".data(using: .utf8)!) }
                 end(.speech)
             }
+        }
+        muteObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioApplication.inputMuteStateChangeNotification, object: nil, queue: nil
+        ) { note in
+            if (note.userInfo?[AVAudioApplication.muteStateKey] as? NSNumber)?.boolValue == true { onMute() }
+        }
+        _ = try? AVAudioApplication.shared.setInputMuteStateChangeHandler { muted in
+            if muted { onMute() }
             return true
         }
     }
+    private static var muteObserver: NSObjectProtocol?
 
     private static func block(rms: Float, ms: Int) {
         guard !ended else { return }
