@@ -52,7 +52,7 @@ struct Config: Codable {
     /// Longest recording before it stops and transcribes on its own (seconds).
     /// A safety stop for a recording left running; pieces decode as they
     /// arrive, so length costs little.
-    var maximumSeconds: Double = 1800
+    var maximumSeconds: Double = 600
     /// Recordings are transcribed in pieces no longer than this (seconds), cut
     /// at the quietest moment in the last part of each piece. The model drifts
     /// and repeats itself on longer single passes. 0 = never split.
