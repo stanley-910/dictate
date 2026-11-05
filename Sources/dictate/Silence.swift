@@ -51,4 +51,42 @@ enum Silence {
         out.append(contentsOf: pcm[copied...])
         return out
     }
+
+    /// Less speech than this and a piece is not decoded: on room noise or
+    /// silence the model makes up "Thank you." and the like.
+    static let minSpeechSeconds = 0.2
+    /// The room estimate is capped here, the top of the rooms measured for
+    /// `EndOfSpeech.overFloor`: in a clip that is talking from end to end the
+    /// quietest tenth is speech, and the threshold would rise above it.
+    static let loudestRoom: Float = 0.015
+    /// Loudness is judged in 100 ms blocks, as `dictate listen` does.
+    private static let blockSeconds = 0.1
+
+    /// Seconds of speech in `pcm`, by `dictate listen`'s rule: blocks above
+    /// both `EndOfSpeech.speechRMS` and `EndOfSpeech.overFloor` times the room
+    /// (the quietest tenth of the blocks, at most `loudestRoom`). Only runs of two or more blocks
+    /// count; a key click or a tap on the desk fills one.
+    static func speechSeconds(_ pcm: [Float], rate: Int) -> Double {
+        let block = max(1, Int(blockSeconds * Double(rate)))
+        var levels: [Float] = []
+        var i = 0
+        while i + block <= pcm.count {
+            var e: Float = 0
+            for v in pcm[i..<(i + block)] { e += v * v }
+            levels.append((e / Float(block)).squareRoot())
+            i += block
+        }
+        // A mic still waking reads zeros; that is not the room.
+        let live = levels.filter { $0 > EndOfSpeech.deadRMS }.sorted()
+        guard !live.isEmpty else { return 0 }
+        let room = min(loudestRoom, live[Int(Double(live.count - 1) * floorPercentile)])
+        let threshold = max(EndOfSpeech.speechRMS, room * EndOfSpeech.overFloor)
+        var run = 0, total = 0
+        for level in levels + [0] {
+            if level > threshold { run += 1; continue }
+            if run >= 2 { total += run }
+            run = 0
+        }
+        return Double(total) * blockSeconds
+    }
 }

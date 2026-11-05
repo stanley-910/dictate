@@ -115,6 +115,8 @@ security delete-identity -c dictate-dev                                 # if you
   Set 0 to disable. A piece the model loops on (one phrase over and over
   until its token cap) is decoded again in halves; a piece that still fails
   shows as `[…]` and the rest of the recording is kept.
+- A piece with no speech in it (silence, room noise, key clicks) is not
+  decoded; on those the model makes up "Thank you." and the like.
 - `maximumSeconds` (default 1800) stops and transcribes a recording left
   running.
 - Every recording is saved to `~/.local/state/dictate/last.wav` when it

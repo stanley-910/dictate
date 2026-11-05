@@ -133,6 +133,10 @@ private struct Pieces {
 
     mutating func take(_ chunk: [Float], with transcriber: Transcriber) {
         count += 1
+        if Silence.speechSeconds(chunk, rate: Int(Recorder.targetRate)) < Silence.minSpeechSeconds {
+            log("piece \(count) of \(seconds(chunk.count)) s has no speech; skipped")
+            return
+        }
         do {
             let piece = try transcriber.decode(chunk)
             if !piece.text.isEmpty { parts.append(piece.text) }
