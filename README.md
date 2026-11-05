@@ -117,7 +117,7 @@ security delete-identity -c dictate-dev                                 # if you
   shows as `[…]` and the rest of the recording is kept.
 - A piece with no speech in it (silence, room noise, key clicks) is not
   decoded; on those the model makes up "Thank you." and the like.
-- `maximumSeconds` (default 1800) stops and transcribes a recording left
+- `maximumSeconds` (default 600) stops and transcribes a recording left
   running.
 - Every recording is saved to `~/.local/state/dictate/last.wav` when it
   stops, cancelled ones and one cut short by quitting included, and its text
@@ -175,7 +175,9 @@ security delete-identity -c dictate-dev                                 # if you
   replacements. Big-O: "O of n" -> `O(n)`, "O n log n" -> `O(n log n)`,
   "O of n squared" -> `O(n^2)`, "2 to the n" -> `2^n`, also `plus`, `times`,
   `factorial`, `square root of`; the phrase ends at the first word that is not
-  math, so "big O notation" stays. Variables: a letter right after a type word
+  math, so "big O notation" stays, and a spelled "one" alone only counts at
+  the end of a clause or before a word like "time" or "lookups" ("oh of one
+  thing" stays). Variables: a letter right after a type word
   ("the string s", "pointers i and j", "target k") is put in backticks, and
   so is every later standalone use of it. Letters never introduced that way
   ("plan B", "C") are left alone.

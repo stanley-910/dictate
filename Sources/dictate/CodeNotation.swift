@@ -57,6 +57,15 @@ enum CodeNotation {
         return out
     }
 
+    /// Words that follow a complexity: "O(1) time", "O(1) lookups".
+    static let complexityWords: Set<String> = [
+        "time", "space", "memory", "extra", "auxiliary", "lookup", "lookups", "access", "accesses",
+        "insert", "inserts", "insertion", "insertions", "delete", "deletes", "deletion", "deletions",
+        "operation", "operations", "op", "ops", "work", "runtime", "complexity", "amortized",
+        "average", "worst", "best", "per", "each", "and", "or", "but", "so", "because", "which",
+        "since", "if", "when", "while", "in", "for", "with", "to", "is", "too", "instead", "then",
+    ]
+
     private static func parseBigO(_ c: [Character], from i: Int) -> (String, Int)? {
         guard var (w, end) = word(c, i, digits: false) else { return nil }
         if w.lowercased() == "big" {
@@ -73,6 +82,12 @@ enum CodeNotation {
             return nil  // "oh n" is not how anyone says it; "oh, so" must stay
         }
         guard let (expr, used) = Expression.parse(toks.map { $0.0 }), used > 0 else { return nil }
+        // "oh of one thing" is not O(1): a spelled number alone only counts at
+        // the end of a clause or before a word that says what is O(1).
+        if used == 1, Expression.numbers[toks[0].0.lowercased()] != nil, used < toks.count,
+           !complexityWords.contains(toks[used].0.lowercased()) {
+            return nil
+        }
         return (expr, toks[used - 1].1)
     }
 
