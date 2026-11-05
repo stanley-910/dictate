@@ -54,27 +54,18 @@ final class Transcriber {
     /// pcm: mono float32 at 16 kHz.
     func transcribe(_ pcm: [Float], completion: @escaping (Result<String, Error>) -> Void) {
         queue.async {
-            do {
-                let t0 = Date()
-                // The model decodes a whole clip in one pass and falls apart past
-                // roughly half a minute (skips ahead, then loops the last sentence),
-                // and the library does no long-form chunking for it. Cut at quiet
-                // points and stitch the pieces.
-                let chunks = Chunker.split(pcm, maxSeconds: self.config.chunkSeconds, rate: Int(Recorder.targetRate))
-                var parts: [String] = []
-                var fed = 0
-                for chunk in chunks {
-                    let piece = try self.decode(chunk)
-                    if !piece.text.isEmpty { parts.append(piece.text) }
-                    fed += piece.samples
-                }
-                let ms = Int(Date().timeIntervalSince(t0) * 1000)
-                log("transcribed \(seconds(pcm.count)) s of audio (\(seconds(fed)) s after pauses) in \(ms) ms (\(chunks.count) chunk\(chunks.count == 1 ? "" : "s"))")
-                self.scheduleUnload()
-                completion(.success(parts.joined(separator: " ")))
-            } catch {
-                completion(.failure(error))
-            }
+            let t0 = Date()
+            // The model decodes a whole clip in one pass and falls apart past
+            // roughly half a minute (skips ahead, then loops the last sentence),
+            // and the library does no long-form chunking for it. Cut at quiet
+            // points and stitch the pieces.
+            let chunks = Chunker.split(pcm, maxSeconds: self.config.chunkSeconds, rate: Int(Recorder.targetRate))
+            var pieces = Pieces()
+            for chunk in chunks { pieces.take(chunk, with: self) }
+            let ms = Int(Date().timeIntervalSince(t0) * 1000)
+            log("transcribed \(seconds(pcm.count)) s of audio (\(seconds(pieces.fed)) s after pauses) in \(ms) ms (\(pieces.summary))")
+            self.scheduleUnload()
+            completion(pieces.result)
         }
     }
 
@@ -92,8 +83,30 @@ final class Transcriber {
         var options = RunOptions()
         options.language = config.language
         let audio = Silence.squeeze(chunk, maxPause: config.maxPauseSeconds, rate: Int(Recorder.targetRate))
-        let text = try session.run(audio, options: options).text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (text, audio.count)
+        return (try run(audio, session: session, options: options, halvings: 2), audio.count)
+    }
+
+    /// Now and then the model gets stuck repeating a phrase until it hits its
+    /// token cap ("the people who are talking about the people who are ...").
+    /// Shorter audio usually decodes cleanly, so such a piece is decoded again
+    /// as two halves cut at a quiet point, up to `halvings` deep; past that,
+    /// its text is kept up to where the repeating starts.
+    private func run(_ audio: [Float], session: Session, options: RunOptions, halvings: Int) throws -> String {
+        do {
+            return try session.run(audio, options: options).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch TranscribeError.outputTruncated(_, let partial) {
+            let rate = Int(Recorder.targetRate)
+            guard halvings > 0, audio.count >= 2 * rate else {
+                log("piece of \(seconds(audio.count)) s looped; keeping its text up to the loop")
+                return Loop.cut(partial?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            log("piece of \(seconds(audio.count)) s looped; decoding it in two halves")
+            let mid = Chunker.middleCut(audio, rate: rate)
+            let halves = try [Array(audio[..<mid]), Array(audio[mid...])].map {
+                try run($0, session: session, options: options, halvings: halvings - 1)
+            }
+            return halves.filter { !$0.isEmpty }.joined(separator: " ")
+        }
     }
 
     fileprivate func scheduleUnload() {
@@ -104,6 +117,71 @@ final class Transcriber {
                 self.queue.async { self.unload() }
             }
         }
+    }
+}
+
+/// The decoded pieces of one recording. A piece that fails is logged and
+/// marked "[…]" in the text instead of failing the whole recording, so one
+/// bad stretch never costs everything around it. On the transcriber's queue.
+private struct Pieces {
+    static let gap = "[…]"
+    private var parts: [String] = []
+    private(set) var count = 0
+    private(set) var fed = 0
+    private var skipped = 0
+    private var lastError: Error?
+
+    mutating func take(_ chunk: [Float], with transcriber: Transcriber) {
+        count += 1
+        do {
+            let piece = try transcriber.decode(chunk)
+            if !piece.text.isEmpty { parts.append(piece.text) }
+            fed += piece.samples
+        } catch {
+            log("piece \(count) of \(seconds(chunk.count)) s failed: \(error)")
+            skipped += 1
+            lastError = error
+            parts.append(Self.gap)
+        }
+    }
+
+    /// The text; a failure only when no piece decoded (a missing model, say).
+    var result: Result<String, Error> {
+        if let lastError, skipped == count { return .failure(lastError) }
+        return .success(parts.joined(separator: " "))
+    }
+
+    var summary: String {
+        "\(count) chunk\(count == 1 ? "" : "s")" + (skipped > 0 ? ", \(skipped) failed" : "")
+    }
+}
+
+/// Text the model produced before it started repeating itself.
+enum Loop {
+    /// The longest phrase checked for repeats, in words.
+    static let maxPhrase = 20
+    /// A loop runs on for hundreds of tokens; real speech repeats a short
+    /// phrase a few times at most ("no no no"). So the copies must span at
+    /// least this many words, and there must be three or more of them.
+    static let minSpan = 24
+
+    /// `text` up to the end of the first copy of the first phrase repeated
+    /// back to back across `minSpan` words; unchanged when there is none.
+    static func cut(_ text: String) -> String {
+        let words = text.split(separator: " ")
+        let keys = words.map { $0.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "'" } }
+        for start in keys.indices {
+            for length in 1...maxPhrase {
+                let copies = max(3, (minSpan + length - 1) / length)
+                guard start + copies * length <= keys.count else { break }
+                let phrase = keys[start..<(start + length)]
+                let repeats = (1..<copies).allSatisfy {
+                    keys[(start + $0 * length)..<(start + ($0 + 1) * length)].elementsEqual(phrase)
+                }
+                if repeats { return words[..<(start + length)].joined(separator: " ") }
+            }
+        }
+        return text
     }
 }
 
@@ -122,10 +200,7 @@ final class LiveTranscript {
     private let timer: DispatchSourceTimer
     // Touched only on the transcriber's queue.
     private var decoded = 0
-    private var parts: [String] = []
-    private var pieces = 0
-    private var fed = 0
-    private var failure: Error?
+    private var pieces = Pieces()
 
     fileprivate init(transcriber: Transcriber, maxSeconds: Double, recorded: @escaping (Int) -> [Float]) {
         self.transcriber = transcriber
@@ -148,45 +223,27 @@ final class LiveTranscript {
     func finish(_ pcm: [Float], completion: @escaping (Result<String, Error>) -> Void) {
         stop()
         transcriber.queue.async {
-            do {
-                if let failure = self.failure { throw failure }
-                let t0 = Date()
-                let early = self.pieces
-                let tail = self.decoded < pcm.count ? Array(pcm[self.decoded...]) : []
-                for chunk in Chunker.split(tail, maxSeconds: self.maxSeconds, rate: Int(Recorder.targetRate)) where !chunk.isEmpty {
-                    try self.take(chunk)
-                }
-                let ms = Int(Date().timeIntervalSince(t0) * 1000)
-                log("transcribed \(seconds(pcm.count)) s of audio (\(seconds(self.fed)) s after pauses) in \(ms) ms after stop (\(self.pieces) chunk\(self.pieces == 1 ? "" : "s"), \(early) while recording)")
-                self.transcriber.scheduleUnload()
-                completion(.success(self.parts.joined(separator: " ")))
-            } catch {
-                completion(.failure(error))
+            let t0 = Date()
+            let early = self.pieces.count
+            let tail = self.decoded < pcm.count ? Array(pcm[self.decoded...]) : []
+            for chunk in Chunker.split(tail, maxSeconds: self.maxSeconds, rate: Int(Recorder.targetRate)) where !chunk.isEmpty {
+                self.pieces.take(chunk, with: self.transcriber)
             }
+            let ms = Int(Date().timeIntervalSince(t0) * 1000)
+            log("transcribed \(seconds(pcm.count)) s of audio (\(seconds(self.pieces.fed)) s after pauses) in \(ms) ms after stop (\(self.pieces.summary), \(early) while recording)")
+            self.transcriber.scheduleUnload()
+            completion(self.pieces.result)
         }
     }
 
     private func advance() {
-        guard failure == nil else { return }
         let pending = recorded(decoded)
         var start = 0
         while let cut = Chunker.firstCut(pending[start...], maxSeconds: maxSeconds, rate: Int(Recorder.targetRate)) {
-            do {
-                try take(Array(pending[start..<cut]))
-            } catch {
-                failure = error
-                return
-            }
+            pieces.take(Array(pending[start..<cut]), with: transcriber)
             decoded += cut - start
             start = cut
         }
-    }
-
-    private func take(_ chunk: [Float]) throws {
-        let piece = try transcriber.decode(chunk)
-        if !piece.text.isEmpty { parts.append(piece.text) }
-        fed += piece.samples
-        pieces += 1
     }
 }
 

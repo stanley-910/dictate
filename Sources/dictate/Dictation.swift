@@ -38,12 +38,17 @@ final class Dictation {
         if config.muteSpeakersWhileRecording { mute.engage() }
     }
 
-    /// Releases the mic and the speaker mute; returns the audio and how long it ran.
-    func stop() -> (pcm: [Float], seconds: TimeInterval) {
+    /// Releases the mic and the speaker mute; returns the audio and how long it
+    /// ran. The audio is saved first (`Recovery`), cancelled recordings too, so
+    /// whatever happens next it can be transcribed again. `wait` holds until
+    /// it is on disk, for quitting.
+    func stop(wait: Bool = false) -> (pcm: [Float], seconds: TimeInterval) {
         let seconds = recorder.duration
+        let wasRecording = recorder.isRecording
         live?.stop()
         let pcm = recorder.stop()
         mute.release()
+        if wasRecording, seconds >= config.minimumSeconds { Recovery.saveAudio(pcm, wait: wait) }
         return (pcm, seconds)
     }
 
@@ -57,20 +62,29 @@ final class Dictation {
     /// other audio (a file) is decoded whole. Completion runs on the
     /// transcriber's queue.
     func text(from pcm: [Float], completion: @escaping (Result<String, Error>) -> Void) {
+        let isRecording = live != nil
         let done: (Result<String, Error>) -> Void = { [transcriber] result in
-            completion(result.map { transcriber.config.postProcess($0) })
+            let result = result.map { transcriber.config.postProcess($0) }
+            if isRecording, case .success(let text) = result, !text.isEmpty { Recovery.saveText(text) }
+            completion(result)
         }
         if let live {
             self.live = nil
-            live.finish(pcm, completion: done)
+            live.finish(pcm) { result in
+                if case .failure = result {
+                    log("recording kept at \(Recovery.audioURL.path); dictate transcribe it to retry")
+                }
+                done(result)
+            }
         } else {
             transcriber.transcribe(pcm, completion: done)
         }
     }
 
     /// Before exit: ggml's Metal teardown asserts if a model outlives exit().
+    /// A recording still running is saved before the app goes.
     func shutdown() {
-        _ = stop()
+        _ = stop(wait: true)
         live = nil
         transcriber.unloadSync()
     }

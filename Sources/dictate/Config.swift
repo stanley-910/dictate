@@ -49,8 +49,10 @@ struct Config: Codable {
     var trailingSpace: Bool = false
     /// Cancel recordings shorter than this (seconds) instead of transcribing.
     var minimumSeconds: Double = 0.3
-    /// Longest recording before auto-stop (seconds).
-    var maximumSeconds: Double = 120
+    /// Longest recording before it stops and transcribes on its own (seconds).
+    /// A safety stop for a recording left running; pieces decode as they
+    /// arrive, so length costs little.
+    var maximumSeconds: Double = 1800
     /// Recordings are transcribed in pieces no longer than this (seconds), cut
     /// at the quietest moment in the last part of each piece. The model drifts
     /// and repeats itself on longer single passes. 0 = never split.

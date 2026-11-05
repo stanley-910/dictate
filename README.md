@@ -112,7 +112,15 @@ security delete-identity -c dictate-dev                                 # if you
   model drifts and repeats itself on a single pass much past half a minute.
   Pieces are decoded while you are still talking, so stopping leaves only the
   last one: the wait after stop stays about a second however long you talk.
-  Set 0 to disable.
+  Set 0 to disable. A piece the model loops on (one phrase over and over
+  until its token cap) is decoded again in halves; a piece that still fails
+  shows as `[…]` and the rest of the recording is kept.
+- `maximumSeconds` (default 1800) stops and transcribes a recording left
+  running.
+- Every recording is saved to `~/.local/state/dictate/last.wav` when it
+  stops, cancelled ones and one cut short by quitting included, and its text
+  to `last.txt`. Menu bar > Copy Last Transcript copies the text again;
+  Transcribe Last Recording decodes the audio again and copies the result.
 - Pauses longer than `maxPauseSeconds` (default 0.6) are shortened to it before
   decoding, since the model spends as long on silence as on speech. The log
   line shows how much audio was left. Set 0 to keep every pause.

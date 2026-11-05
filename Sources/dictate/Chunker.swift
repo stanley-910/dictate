@@ -30,6 +30,13 @@ enum Chunker {
         return quietestPoint(pcm, from: pcm.startIndex + minLen, to: pcm.startIndex + maxLen, frame: frame)
     }
 
+    /// Where to halve a piece the model could not decode: the quietest point in
+    /// its middle third, so neither half is much shorter than the other.
+    static func middleCut(_ pcm: [Float], rate: Int) -> Int {
+        let frame = max(1, Int(frameSeconds * Double(rate)))
+        return quietestPoint(pcm[...], from: pcm.count / 3, to: pcm.count * 2 / 3, frame: frame)
+    }
+
     /// Index of the middle of the lowest-energy frame in `from..<to`. Ties go
     /// to the later frame so pieces stay as long as they can.
     private static func quietestPoint(_ pcm: ArraySlice<Float>, from: Int, to: Int, frame: Int) -> Int {

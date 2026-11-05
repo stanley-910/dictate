@@ -164,7 +164,9 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         dictation.muteSpeakersIfConfigured()
         maxTimer?.invalidate()
         maxTimer = Timer.scheduledTimer(withTimeInterval: config.maximumSeconds, repeats: false) { [weak self] _ in
-            self?.stopAndTranscribe()
+            guard let self else { return }
+            log("reached maximumSeconds (\(Int(self.config.maximumSeconds)) s); stopping")
+            self.stopAndTranscribe()
         }
     }
 
@@ -289,6 +291,13 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         dictItem.target = self
         menu.addItem(dictItem)
         menu.addItem(NSMenuItem.separator())
+        let lastText = NSMenuItem(title: "Copy Last Transcript", action: #selector(copyLastTranscript), keyEquivalent: "")
+        lastText.target = self
+        menu.addItem(lastText)
+        let lastAudio = NSMenuItem(title: "Transcribe Last Recording", action: #selector(transcribeLastRecording), keyEquivalent: "")
+        lastAudio.target = self
+        menu.addItem(lastAudio)
+        menu.addItem(NSMenuItem.separator())
         let copyPath = NSMenuItem(title: "Copy Config Path", action: #selector(copyConfigPath), keyEquivalent: "")
         copyPath.target = self
         menu.addItem(copyPath)
@@ -317,6 +326,41 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         main.addItem(NSMenuItem(title: "Dictate", action: nil, keyEquivalent: ""))
         main.addItem(editItem)
         NSApp.mainMenu = main
+    }
+
+    @objc private func copyLastTranscript() {
+        guard let text = Recovery.lastText else { return beep() }
+        Paster.copy(text)
+    }
+
+    /// Decodes the saved recording again and copies the text: for a recording
+    /// that failed, was cancelled by mistake, or pasted into the wrong place.
+    @objc private func transcribeLastRecording() {
+        guard state == .idle else { return beep() }
+        let pcm: [Float]
+        do { pcm = try Wav.readMono16k(Recovery.audioURL) } catch {
+            log("no saved recording: \(error)")
+            return beep()
+        }
+        state = .transcribing
+        setIcon("◐", color: .systemOrange)
+        dictation.text(from: pcm) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.state = .idle
+                self.setIcon("○")
+                switch result {
+                case .success(let text):
+                    Recovery.saveText(text)
+                    Paster.copy(text)
+                    self.playSound(self.config.soundPack.stop)
+                    log("copied last recording")
+                case .failure(let error):
+                    log("transcribe failed: \(error)")
+                    self.beep()
+                }
+            }
+        }
     }
 
     @objc private func showDictionary() {
