@@ -69,6 +69,9 @@ struct Config: Codable {
     var dictionaryThreshold: Double = 0.8
     /// Ordered, case-insensitive whole-word replacements applied after the dictionary.
     var replacements: [Replacement] = []
+    /// Write spoken code talk as typed: "O of n log n" -> "O(n log n)", and a
+    /// letter named after a type word ("the string s") in backticks.
+    var codeNotation: Bool = true
     /// Spoken phrases listed in menu bar > Cheat Sheet with what the
     /// replacements turn them into, e.g. "wink smile face" -> ";)".
     var cheatSheet: [String] = []
@@ -168,6 +171,7 @@ struct Config: Codable {
         dictionaryThreshold = try c.decodeIfPresent(Double.self, forKey: .dictionaryThreshold) ?? d.dictionaryThreshold
         replacements = try c.decodeIfPresent([Replacement].self, forKey: .replacements) ?? d.replacements
         cheatSheet = try c.decodeIfPresent([String].self, forKey: .cheatSheet) ?? d.cheatSheet
+        codeNotation = try c.decodeIfPresent(Bool.self, forKey: .codeNotation) ?? d.codeNotation
     }
 
     static var path: URL {
@@ -209,11 +213,12 @@ struct Config: Codable {
         try (encoder.encode(JSONValue.object(object)) + Data("\n".utf8)).write(to: url, options: .atomic)
     }
 
-    /// Dictionary then replacements, in that order.
+    /// Dictionary, replacements, then code notation, in that order.
     func postProcess(_ raw: String) -> String {
         let text = casing == .lower ? raw.lowercased() : raw
         let fixed = Dictionary.apply(text, terms: Dictionary.terms(dictionary), threshold: dictionaryThreshold)
         var out = Replacements.apply(fixed, rules: replacements)
+        if codeNotation { out = CodeNotation.apply(out) }
         if casing == .sentence, let first = out.first, first.isLowercase {
             out = first.uppercased() + out.dropFirst()
         }

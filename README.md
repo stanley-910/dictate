@@ -171,6 +171,14 @@ security delete-identity -c dictate-dev                                 # if you
 - `replacements` run after the dictionary: whole-word, case-insensitive,
   in order; set `"regex": true` on an entry to use a regular expression.
   Use these for rewrites that are not spelling fixes, e.g. "pie" -> "Pi".
+- `codeNotation` (default true) writes spoken code talk as typed, after the
+  replacements. Big-O: "O of n" -> `O(n)`, "O n log n" -> `O(n log n)`,
+  "O of n squared" -> `O(n^2)`, "2 to the n" -> `2^n`, also `plus`, `times`,
+  `factorial`, `square root of`; the phrase ends at the first word that is not
+  math, so "big O notation" stays. Variables: a letter right after a type word
+  ("the string s", "pointers i and j", "target k") is put in backticks, and
+  so is every later standalone use of it. Letters never introduced that way
+  ("plan B", "C") are left alone.
 - Menu bar > Dictionary (Cmd-D while the menu is open) edits `dictionary`
   in a window, one term per line; Save writes the config file (keys come
   out sorted and pretty-printed, a symlinked file stays a link).
