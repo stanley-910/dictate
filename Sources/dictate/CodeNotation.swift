@@ -2,14 +2,15 @@ import Foundation
 
 /// Writes spoken code talk the way it is typed: "O of n log n" -> "O(n log n)",
 /// "4 minus 52" -> "4 - 52", "take this string s and reverse s" -> "take
-/// this string `s` and reverse `s`", and "s of i equals s of j" -> "`s[i] ==
-/// s[j]`". The model writes
+/// this string `s` and reverse `s`", "s of i equals s of j" -> "`s[i] ==
+/// s[j]`" and "camel case max depth" -> "`maxDepth`". The model writes
 /// numbers as digits but spells the rest out in words.
 enum CodeNotation {
     /// With `spans`, every converted expression is put in backticks, not
     /// only those that use a declared variable: "`4 - 52`", "`O(n)`".
     static func apply(_ text: String, spans: Bool = false) -> String {
-        var out = bigO(text, spans: spans)
+        var out = identifiers(text)
+        out = bigO(out, spans: spans)
         let names = declaredNames(out)
         out = arithmetic(out, names: names, spans: spans)
         return backtickVariables(out, names: names)
@@ -336,6 +337,103 @@ enum CodeNotation {
                 if !expectOperand, sawMath || mode != .arithmetic { best = Found(text: out, used: i, usesName: usesName) }
             }
         }
+    }
+
+    // MARK: identifiers
+
+    /// The spoken case styles, each with how it joins words.
+    static let caseStyles: [([String], ([String]) -> String)] = [
+        (["screaming", "snake", "case"], { $0.map { $0.uppercased() }.joined(separator: "_") }),
+        (["constant", "case"], { $0.map { $0.uppercased() }.joined(separator: "_") }),
+        (["camel", "case"], { ws in ws.enumerated().map { $0 == 0 ? $1 : $1.prefix(1).uppercased() + $1.dropFirst() }.joined() }),
+        (["camelcase"], { ws in ws.enumerated().map { $0 == 0 ? $1 : $1.prefix(1).uppercased() + $1.dropFirst() }.joined() }),
+        (["pascal", "case"], { $0.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined() }),
+        (["pascalcase"], { $0.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined() }),
+        (["snake", "case"], { $0.joined(separator: "_") }),
+        (["snakecase"], { $0.joined(separator: "_") }),
+        (["kebab", "case"], { $0.joined(separator: "-") }),
+        (["kebabcase"], { $0.joined(separator: "-") }),
+    ]
+
+    /// Words that end a spoken identifier: "camel case max depth to 0" is
+    /// `maxDepth` to 0. As the first word only `identifierStarts` count, so
+    /// "camel case is valid" is `isValid` but "camel case for names" stays.
+    static let identifierStops: Set<String> = [
+        "and", "or", "then", "to", "is", "are", "was", "were", "be", "in", "on", "at", "of", "for", "with",
+        "from", "by", "as", "into", "the", "a", "an", "it", "its", "if", "when", "while", "so", "but", "not",
+        "equals", "equal", "plus", "minus", "times", "over", "mod", "divided", "less", "greater", "than",
+        "that", "which", "this", "these", "those", "we", "you", "i", "he", "she", "they", "should", "would",
+        "will", "can", "could", "must", "call", "calls", "set", "returns", "return", "gets", "has", "have",
+    ]
+    static let identifierStarts: Set<String> = ["is", "has", "get", "gets", "set", "can", "should", "to", "on", "as", "will"]
+    /// After these, a case style is talked about, not used: "the camel case style".
+    static let caseArticles: Set<String> = ["the", "a", "an", "in", "with"]
+    /// The most words one identifier takes.
+    static let maxIdentifierWords = 4
+
+    /// "camel case max depth" -> `maxDepth`, "snake case user id" ->
+    /// `user_id`, also "pascal", "kebab" and "screaming snake" / "constant"
+    /// case. The words run to punctuation, a stop word or
+    /// `maxIdentifierWords`. Once named, a later "max depth" is `maxDepth` too.
+    static func identifiers(_ text: String) -> String {
+        var words = text.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        let bare = { (w: String) in w.lowercased().trimmingCharacters(in: .punctuationCharacters) }
+        var named: [([String], String)] = []
+        var out: [String] = []
+        var i = 0
+        scan: while i < words.count {
+            for (spoken, join) in caseStyles where i + spoken.count < words.count {
+                let trigger = words[i..<(i + spoken.count)]
+                // Punctuation inside "camel, case" means it was not a command.
+                guard trigger.map(bare) == spoken, trigger.allSatisfy({ $0.last?.isLetter == true }),
+                      i == 0 || !caseArticles.contains(bare(words[i - 1])) else { continue }
+                var parts: [String] = []
+                var trail = ""
+                var j = i + spoken.count
+                while j < words.count, parts.count < maxIdentifierWords {
+                    let w = words[j]
+                    let core = w.trimmingCharacters(in: .punctuationCharacters)
+                    guard !core.isEmpty, core.allSatisfy({ $0.isLetter || $0.isNumber }), w.hasPrefix(core),
+                          !identifierStops.contains(core.lowercased())
+                            || (parts.isEmpty && identifierStarts.contains(core.lowercased())) else { break }
+                    parts.append(core.lowercased())
+                    j += 1
+                    if w != core { trail = String(w.dropFirst(core.count)); break }
+                }
+                guard !parts.isEmpty else { continue }
+                let name = join(parts)
+                out.append("`\(name)`" + trail)
+                if parts.count > 1 { named.append((parts, name)) }
+                i = j
+                continue scan
+            }
+            out.append(words[i])
+            i += 1
+        }
+        guard !named.isEmpty else { return out.joined(separator: " ") }
+        // Later mentions of a named identifier, in plain words.
+        words = out
+        out = []
+        i = 0
+        var inSpan = false
+        later: while i < words.count {
+            if !inSpan {
+                for (parts, name) in named where i + parts.count <= words.count {
+                    let run = words[i..<(i + parts.count)]
+                    let last = run.last!
+                    let core = last.trimmingCharacters(in: .punctuationCharacters)
+                    guard run.map(bare) == parts, run.dropLast().allSatisfy({ $0.last?.isLetter == true }),
+                          last.hasPrefix(core) else { continue }
+                    out.append("`\(name)`" + last.dropFirst(core.count))
+                    i += parts.count
+                    continue later
+                }
+            }
+            if words[i].filter({ $0 == "`" }).count % 2 == 1 { inSpan.toggle() }
+            out.append(words[i])
+            i += 1
+        }
+        return out.joined(separator: " ")
     }
 
     // MARK: variables

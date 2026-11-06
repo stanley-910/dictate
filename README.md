@@ -198,6 +198,13 @@ security delete-identity -c dictate-dev                                 # if you
   An expression that uses a declared variable is put in backticks whole:
   "s of i equals s of j" -> `` `s[i] == s[j]` ``. `codeSpans: true` puts
   every expression in backticks (`` `4 - 52` ``, `` `O(n)` ``), for Markdown.
+  Identifiers: "camel case max depth" -> `` `maxDepth` ``, also "pascal
+  case", "snake case", "kebab case" and "screaming snake case" / "constant
+  case". The name runs to punctuation, a small word ("to", "and", "is", "the"
+  ...) or four words, so "camel case max depth grows" takes "grows" too: pause
+  with a comma, or end the name with "to", "and" and the like. A later "max
+  depth" is written `` `maxDepth` `` as well. After "the", "a" or "in" the
+  style is being talked about ("the camel case style") and nothing changes.
 - Menu bar > Dictionary (Cmd-D while the menu is open) edits `dictionary`
   in a window, one term per line; Save writes the config file (keys come
   out sorted and pretty-printed, a symlinked file stays a link).

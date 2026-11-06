@@ -126,3 +126,33 @@ struct IndexingAndComparisonTests {
     }
 }
 
+struct IdentifierTests {
+    @Test(arguments: [
+        ("Set camel case max depth to 0, then call snake case get username.",
+         "Set `maxDepth` to 0, then call `get_username`."),
+        ("Call node.next and Pascal case tree node, then screaming snake case max size.",
+         "Call node.next and `TreeNode`, then `MAX_SIZE`."),
+        ("Use kebab case user profile in the URL.", "Use `user-profile` in the URL."),
+        ("constant case retry limit is 3", "`RETRY_LIMIT` is 3"),
+        ("camel case is valid.", "`isValid`."),
+        ("Store camel case max depth. Later, max depth grows.", "Store `maxDepth`. Later, `maxDepth` grows."),
+    ])
+    func converts(_ said: String, _ typed: String) {
+        #expect(CodeNotation.apply(said) == typed)
+    }
+
+    @Test(arguments: [
+        "I like the camel case style.",
+        "Use camel case for names.",
+        "We use snake, case by case.",
+        "camel case",
+        "write it in snake case",
+    ])
+    func leavesProse(_ said: String) {
+        #expect(CodeNotation.apply(said) == said)
+    }
+
+    @Test func toString() {
+        #expect(CodeNotation.apply("call camel case to string on it") == "call `toString` on it")
+    }
+}
