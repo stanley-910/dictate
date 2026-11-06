@@ -5,10 +5,10 @@ import Testing
 struct PostProcessTests {
     /// The emoticon rules from the author's config, which the other rules
     /// must not disturb.
-    static let emoticons: Config = {
-        let url = Bundle.module.url(forResource: "emoticons", withExtension: "json")!
-        return try! JSONDecoder().decode(Config.self, from: Data(contentsOf: url))
-    }()
+    static func emoticonConfig() throws -> Config {
+        let url = try #require(Bundle.module.url(forResource: "emoticons", withExtension: "json"))
+        return try JSONDecoder().decode(Config.self, from: Data(contentsOf: url))
+    }
 
     @Test(arguments: [
         ("angry winky face", ">;)"),
@@ -17,8 +17,8 @@ struct PostProcessTests {
         ("tongue face", ":P"),
         ("oh face", ":O"),
     ])
-    func emoticons(_ said: String, _ typed: String) {
-        #expect(Self.emoticons.postProcess(said) == typed)
+    func emoticons(_ said: String, _ typed: String) throws {
+        #expect(try Self.emoticonConfig().postProcess(said) == typed)
     }
 
     @Test(arguments: [
@@ -27,6 +27,12 @@ struct PostProcessTests {
         ("n factorial grows fast", "n! grows fast"),
         ("the string s", "The string `s`"),
         ("a plus is fine", "A plus is fine"),
+        ("a + b is the sum", "a + b is the sum"),
+        ("x+y here", "x+y here"),
+        ("x == y holds", "x == y holds"),
+        ("x-ray it", "X-ray it"),
+        ("i - unlike him - agree", "I - unlike him - agree"),
+        ("i - 1 is the last", "i - 1 is the last"),
         ("so it works", "So it works"),
     ])
     func sentenceCasingSkipsLeadingCode(_ said: String, _ typed: String) {

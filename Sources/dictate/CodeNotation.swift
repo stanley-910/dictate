@@ -10,20 +10,24 @@ enum CodeNotation {
     }
 
     /// Whether `text` opens with a variable or an expression ("x^2 + 1",
-    /// "i % n", "`s` is"), which sentence casing must not capitalize.
+    /// "i % n", "a == b", "x+y", "`s` is"), which sentence casing must not
+    /// capitalize. "i - unlike him -" is prose: the right side must be an
+    /// operand too.
     static func startsWithCode(_ text: String) -> Bool {
         if text.hasPrefix("`") { return true }
-        let words = text.split(separator: " ", maxSplits: 2).map(String.init)
-        guard let head = words.first, let first = head.first, first.isLetter else { return false }
+        let words = text.split(separator: " ", maxSplits: 3).map(String.init)
+        guard let head = words.first, let first = head.first, first.isLetter, first.isASCII else { return false }
         let rest = head.dropFirst()
-        // "x^2", "n!", "s[i]"
-        if rest.first.map({ "^![".contains($0) }) == true { return true }
-        // "i % n", "x + 1"
-        return rest.isEmpty && head != "a" && words.count > 1 && codeOperators.contains(words[1])
+        // "x^2", "n!", "s[i]", "x+y" (not "x-ray")
+        if let next = rest.first, "^![+*/%=<>".contains(next) { return true }
+        guard rest.isEmpty, head != "I", words.count > 2, codeOperators.contains(words[1]) else { return false }
+        let right = words[2]
+        return right.first.map { $0.isNumber || $0 == "-" || $0 == "(" || $0 == "`" } == true
+            || (right.count == 1 || right.dropLast().count == 1 && !right.last!.isLetter) && right.first!.isLetter
     }
 
-    /// What `arithmetic` (and the comparisons) write between operands.
-    static let codeOperators: Set<String> = ["+", "-", "*", "/", "%"]
+    /// What `arithmetic` and the comparisons write between operands.
+    static let codeOperators: Set<String> = ["+", "-", "*", "/", "%", "=", "==", "!=", "<", ">", "<=", ">="]
 
     // MARK: arithmetic
 
