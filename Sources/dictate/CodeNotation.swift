@@ -9,6 +9,22 @@ enum CodeNotation {
         backtickVariables(arithmetic(bigO(text)))
     }
 
+    /// Whether `text` opens with a variable or an expression ("x^2 + 1",
+    /// "i % n", "`s` is"), which sentence casing must not capitalize.
+    static func startsWithCode(_ text: String) -> Bool {
+        if text.hasPrefix("`") { return true }
+        let words = text.split(separator: " ", maxSplits: 2).map(String.init)
+        guard let head = words.first, let first = head.first, first.isLetter else { return false }
+        let rest = head.dropFirst()
+        // "x^2", "n!", "s[i]"
+        if rest.first.map({ "^![".contains($0) }) == true { return true }
+        // "i % n", "x + 1"
+        return rest.isEmpty && head != "a" && words.count > 1 && codeOperators.contains(words[1])
+    }
+
+    /// What `arithmetic` (and the comparisons) write between operands.
+    static let codeOperators: Set<String> = ["+", "-", "*", "/", "%"]
+
     // MARK: arithmetic
 
     /// Operator words between operands: "4 minus 52" -> "4 - 52", "i mod n"

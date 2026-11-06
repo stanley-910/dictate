@@ -219,7 +219,7 @@ struct Config: Codable {
         let fixed = Dictionary.apply(text, terms: Dictionary.terms(dictionary), threshold: dictionaryThreshold)
         var out = Replacements.apply(fixed, rules: replacements)
         if codeNotation { out = CodeNotation.apply(out) }
-        if casing == .sentence, let first = out.first, first.isLowercase {
+        if casing == .sentence, let first = out.first, first.isLowercase, !CodeNotation.startsWithCode(out) {
             out = first.uppercased() + out.dropFirst()
         }
         if !endPeriod {

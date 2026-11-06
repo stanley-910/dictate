@@ -21,6 +21,20 @@ struct PostProcessTests {
         #expect(Self.emoticons.postProcess(said) == typed)
     }
 
+    @Test(arguments: [
+        ("x squared plus 1", "x^2 + 1"),
+        ("i mod n is the slot", "i % n is the slot"),
+        ("n factorial grows fast", "n! grows fast"),
+        ("the string s", "The string `s`"),
+        ("a plus is fine", "A plus is fine"),
+        ("so it works", "So it works"),
+    ])
+    func sentenceCasingSkipsLeadingCode(_ said: String, _ typed: String) {
+        var c = Config()
+        c.casing = .sentence
+        #expect(c.postProcess(said) == typed)
+    }
+
     @Test func endPeriod() {
         var c = Config()
         c.endPeriod = false
