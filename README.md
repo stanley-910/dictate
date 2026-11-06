@@ -193,7 +193,8 @@ security delete-identity -c dictate-dev                                 # if you
   Comparisons: "is less than" -> `<`, "is greater than or equal to" -> `>=`,
   "equals" / "is equal to" -> `==`, "is not equal to" / "does not equal" ->
   `!=`, "is at most" / "is at least" -> `<=` / `>=` (not after a number, so
-  "5 at least" stays), "is set to" -> `=`. Indexing, for a declared
+  "5 at least" stays), "is set to" -> `=`; an undeclared capital letter does
+  not compare ("Plan B is at least 2 hours" stays). Indexing, for a declared
   variable: "s of i" / "s at i" -> `s[i]`, "s of i plus 1" -> `s[i + 1]`.
   An expression that uses a declared variable is put in backticks whole:
   "s of i equals s of j" -> `` `s[i] == s[j]` ``. `codeSpans: true` puts
@@ -204,7 +205,9 @@ security delete-identity -c dictate-dev                                 # if you
   ...) or four words, so "camel case max depth grows" takes "grows" too: pause
   with a comma, or end the name with "to", "and" and the like. A later "max
   depth" is written `` `maxDepth` `` as well. After "the", "a" or "in" the
-  style is being talked about ("the camel case style") and nothing changes.
+  style is being talked about ("the camel case style", "I prefer snake case
+  names") and nothing changes. A spoken identifier is not yet an operand:
+  "camel case max depth equals 2" gives `` `maxDepth` equals 2``.
 - Menu bar > Dictionary (Cmd-D while the menu is open) edits `dictionary`
   in a window, one term per line; Save writes the config file (keys come
   out sorted and pretty-printed, a symlinked file stays a link).

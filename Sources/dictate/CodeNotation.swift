@@ -29,8 +29,10 @@ enum CodeNotation {
         if let next = rest.first, "^![+*/%=<>".contains(next) { return true }
         guard rest.isEmpty, head != "I", words.count > 2, codeOperators.contains(words[1]) else { return false }
         let right = words[2]
-        return right.first.map { $0.isNumber || $0 == "-" || $0 == "(" || $0 == "`" } == true
-            || (right.count == 1 || right.dropLast().count == 1 && !right.last!.isLetter) && right.first!.isLetter
+        guard let r = right.first else { return false }
+        if r.isNumber || r == "-" || r == "(" || r == "`" { return true }
+        // "y", "y.", "y^2", "y!", "s[i]": one letter, then no more letters.
+        return r.isLetter && r.isASCII && !right.dropFirst().contains(where: \.isLetter)
     }
 
     /// What `arithmetic` and the comparisons write between operands.
@@ -49,7 +51,7 @@ enum CodeNotation {
         var out = ""
         var i = 0
         while i < chars.count {
-            if let end = spanEnd(chars, i) {
+            if let end = spanEnd(chars, i) ?? bigOEnd(chars, i) {
                 out += String(chars[i..<end])
                 i = end
                 continue
@@ -69,10 +71,32 @@ enum CodeNotation {
     }
 
     /// Past the closing backtick when a code span opens at `i`: code already
-    /// written is left alone.
+    /// written is left alone. Runs of backticks ("``x``") close on the same run.
     private static func spanEnd(_ c: [Character], _ i: Int) -> Int? {
-        guard c[i] == "`", let close = c[(i + 1)...].firstIndex(of: "`") else { return nil }
-        return close + 1
+        guard c[i] == "`" else { return nil }
+        var n = 0
+        while i + n < c.count, c[i + n] == "`" { n += 1 }
+        var j = i + n
+        while j < c.count {
+            if c[j] == "`" {
+                var m = 0
+                while j + m < c.count, c[j + m] == "`" { m += 1 }
+                if m == n { return j + m }
+                j += m
+            } else { j += 1 }
+        }
+        return nil
+    }
+
+    /// Past the ")" of an `O(...)` that `bigO` wrote at `i`, so arithmetic
+    /// does not take its inside apart again.
+    private static func bigOEnd(_ c: [Character], _ i: Int) -> Int? {
+        guard c[i] == "O", i + 1 < c.count, c[i + 1] == "(", isWordStart(c, i) else { return nil }
+        var depth = 0
+        for j in (i + 1)..<c.count {
+            if c[j] == "(" { depth += 1 } else if c[j] == ")" { depth -= 1; if depth == 0 { return j + 1 } }
+        }
+        return nil
     }
 
     // MARK: Big-O
@@ -108,6 +132,11 @@ enum CodeNotation {
     private static func word(_ c: [Character], _ i: Int, digits: Bool = true) -> (String, Int)? {
         var j = i
         while j < c.count, c[j].isLetter || (digits && c[j].isNumber) { j += 1 }
+        // "1.5": a point between digits stays in the number.
+        while digits, j > i, c[j - 1].isNumber, j + 1 < c.count, c[j] == ".", c[j + 1].isNumber {
+            j += 1
+            while j < c.count, c[j].isNumber { j += 1 }
+        }
         return j > i ? (String(c[i..<j]), j) : nil
     }
 
@@ -205,6 +234,7 @@ enum CodeNotation {
         /// An operator, power, factorial or sign so far: plain "4" is not math.
         private var sawMath = false
         private var usesName = false
+        private var lastOperand = ""
         private var arithmetic: Bool { mode != .bigO }
 
         static func parse(_ words: [String], mode: Mode, names: Set<String> = []) -> Found? {
@@ -236,6 +266,8 @@ enum CodeNotation {
             guard let w else { return nil }
             if let n = Self.numbers[w.lowercased()] { return n }
             if w.allSatisfy(\.isNumber) { return w }
+            if w.split(separator: ".", omittingEmptySubsequences: false).count == 2,
+               w.allSatisfy({ $0.isNumber || $0 == "." }), w.first!.isNumber, w.last!.isNumber { return w }
             // "2n" as the model writes it
             if let last = w.last, last.isLetter, w.count > 1, w.dropLast().allSatisfy(\.isNumber) { return w }
             // "a" and "I" are words, not variables.
@@ -255,6 +287,8 @@ enum CodeNotation {
                     out += "-" + o
                     i += 2
                     sawMath = true
+                    if names.contains(o) { usesName = true }
+                    lastOperand = o
                     previousWasNumber = o.first!.isNumber
                     expectOperand = false
                 } else if !arithmetic, lw == "log" {
@@ -279,6 +313,9 @@ enum CodeNotation {
                         // "2 n" -> 2n; any other pair of operands ends the phrase.
                         guard previousWasNumber, !o.first!.isNumber else { return }
                     }
+                    // "s of i plus s of j" is s[i] + s[j]: an index ends before another indexed name.
+                    if mode == .index, names.contains(o), peek(1) == "of" || peek(1) == "at" { return }
+                    lastOperand = o
                     out += o
                     i += 1
                     previousWasNumber = o.first!.isNumber
@@ -295,7 +332,9 @@ enum CodeNotation {
                     }
                 } else if !expectOperand, let (op, length) = comparison(),
                           // "at least 3 people" is prose; "n is at least 3" is not.
-                          !(previousWasNumber && op.count == 2 && words[i + length - 2].lowercased() == "at") {
+                          !(previousWasNumber && op.count == 2 && words[i + length - 2].lowercased() == "at"),
+                          // "Plan B is at least 2 hours": a capital letter compares only once declared.
+                          !(lastOperand.count == 1 && lastOperand.first!.isUppercase && !names.contains(lastOperand)) {
                     out += " \(op) "
                     i += length
                     sawMath = true
@@ -320,6 +359,7 @@ enum CodeNotation {
                     else if x.hasSuffix("th"), x.dropLast(2).allSatisfy(\.isNumber), x.count > 2 { exponent = String(x.dropLast(2)) }  // 10th
                     else { exponent = operand(words[i + k]) }
                     guard let exponent else { return }
+                    if names.contains(exponent) { usesName = true }
                     out += "^" + exponent
                     i += k + 1
                     sawMath = true
@@ -366,67 +406,66 @@ enum CodeNotation {
         "will", "can", "could", "must", "call", "calls", "set", "returns", "return", "gets", "has", "have",
     ]
     static let identifierStarts: Set<String> = ["is", "has", "get", "gets", "set", "can", "should", "to", "on", "as", "will"]
-    /// After these, a case style is talked about, not used: "the camel case style".
-    static let caseArticles: Set<String> = ["the", "a", "an", "in", "with"]
+    /// After these, a case style is talked about, not used: "the camel case
+    /// style", "I prefer snake case names".
+    static let caseArticles: Set<String> = [
+        "the", "a", "an", "in", "with", "prefer", "prefers", "like", "likes", "about", "of", "than",
+        "is", "are", "not",
+    ]
     /// The most words one identifier takes.
     static let maxIdentifierWords = 4
 
     /// "camel case max depth" -> `maxDepth`, "snake case user id" ->
     /// `user_id`, also "pascal", "kebab" and "screaming snake" / "constant"
     /// case. The words run to punctuation, a stop word or
-    /// `maxIdentifierWords`. Once named, a later "max depth" is `maxDepth` too.
+    /// `maxIdentifierWords`. Once named, a later "max depth" is `maxDepth`
+    /// too. Code already in backticks is left alone.
     static func identifiers(_ text: String) -> String {
-        var words = text.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        let words = text.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
         let bare = { (w: String) in w.lowercased().trimmingCharacters(in: .punctuationCharacters) }
         var named: [([String], String)] = []
         var out: [String] = []
+        var inSpan = false
         var i = 0
         scan: while i < words.count {
-            for (spoken, join) in caseStyles where i + spoken.count < words.count {
-                let trigger = words[i..<(i + spoken.count)]
-                // Punctuation inside "camel, case" means it was not a command.
-                guard trigger.map(bare) == spoken, trigger.allSatisfy({ $0.last?.isLetter == true }),
-                      i == 0 || !caseArticles.contains(bare(words[i - 1])) else { continue }
-                var parts: [String] = []
-                var trail = ""
-                var j = i + spoken.count
-                while j < words.count, parts.count < maxIdentifierWords {
-                    let w = words[j]
-                    let core = w.trimmingCharacters(in: .punctuationCharacters)
-                    guard !core.isEmpty, core.allSatisfy({ $0.isLetter || $0.isNumber }), w.hasPrefix(core),
-                          !identifierStops.contains(core.lowercased())
-                            || (parts.isEmpty && identifierStarts.contains(core.lowercased())) else { break }
-                    parts.append(core.lowercased())
-                    j += 1
-                    if w != core { trail = String(w.dropFirst(core.count)); break }
-                }
-                guard !parts.isEmpty else { continue }
-                let name = join(parts)
-                out.append("`\(name)`" + trail)
-                if parts.count > 1 { named.append((parts, name)) }
-                i = j
-                continue scan
-            }
-            out.append(words[i])
-            i += 1
-        }
-        guard !named.isEmpty else { return out.joined(separator: " ") }
-        // Later mentions of a named identifier, in plain words.
-        words = out
-        out = []
-        i = 0
-        var inSpan = false
-        later: while i < words.count {
             if !inSpan {
+                for (spoken, join) in caseStyles where i + spoken.count < words.count {
+                    let trigger = words[i..<(i + spoken.count)]
+                    // Punctuation inside "camel, case" means it was not a command.
+                    guard trigger.map(bare) == spoken, trigger.allSatisfy({ $0.last?.isLetter == true }),
+                          i == 0 || !caseArticles.contains(bare(words[i - 1])) else { continue }
+                    var parts: [String] = []
+                    var trail = ""
+                    var j = i + spoken.count
+                    while j < words.count, parts.count < maxIdentifierWords {
+                        let w = words[j]
+                        let core = w.trimmingCharacters(in: .punctuationCharacters)
+                        guard !core.isEmpty, core.allSatisfy({ $0.isLetter || $0.isNumber }), w.hasPrefix(core),
+                              !identifierStops.contains(core.lowercased())
+                                || (parts.isEmpty && identifierStarts.contains(core.lowercased())) else { break }
+                        parts.append(core.lowercased())
+                        j += 1
+                        if w != core { trail = String(w.dropFirst(core.count)); break }
+                    }
+                    guard !parts.isEmpty else { continue }
+                    // "(camel case x" keeps its "(".
+                    let lead = String(words[i].prefix { !$0.isLetter })
+                    let name = join(parts)
+                    out.append(lead + "`\(name)`" + trail)
+                    if parts.count > 1 { named.append((parts, name)) }
+                    i = j
+                    continue scan
+                }
+                // A later mention of a name given earlier, in plain words.
                 for (parts, name) in named where i + parts.count <= words.count {
                     let run = words[i..<(i + parts.count)]
                     let last = run.last!
                     let core = last.trimmingCharacters(in: .punctuationCharacters)
                     guard run.map(bare) == parts, run.dropLast().allSatisfy({ $0.last?.isLetter == true }),
-                          last.hasPrefix(core) else { continue }
+                          last.hasPrefix(core), run.first!.first?.isLetter == true else { continue }
                     out.append("`\(name)`" + last.dropFirst(core.count))
                     i += parts.count
-                    continue later
+                    continue scan
                 }
             }
             if words[i].filter({ $0 == "`" }).count % 2 == 1 { inSpan.toggle() }

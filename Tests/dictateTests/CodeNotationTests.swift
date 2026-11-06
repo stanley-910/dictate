@@ -96,6 +96,11 @@ struct IndexingAndComparisonTests {
         ("x does not equal y", "x != y"),
         ("x is set to 4", "x = 4"),
         ("I is at most 3", "i <= 3"),
+        ("string s. s of i plus s of j", "string `s`. `s[i] + s[j]`"),
+        ("variable x. x equals 1.5", "variable `x`. `x == 1.5`"),
+        ("variable n. O of n plus 1", "variable `n`. O(n + 1)"),
+        ("variable n. negative n plus 1", "variable `n`. `-n + 1`"),
+        ("variable n. 2 to the n", "variable `n`. `2^n`"),
     ])
     func converts(_ said: String, _ typed: String) {
         #expect(CodeNotation.apply(said) == typed)
@@ -110,6 +115,9 @@ struct IndexingAndComparisonTests {
         "i - unlike him - we agree",
         "the length of s is 3",
         "swap s of i and s of j",  // s never declared
+        "Plan B is at least 2 hours away.",
+        "pi is 3.14",
+        "say ``x equals 2`` here",
     ])
     func leavesProse(_ said: String) {
         #expect(CodeNotation.apply(said) == said)
@@ -136,6 +144,8 @@ struct IdentifierTests {
         ("constant case retry limit is 3", "`RETRY_LIMIT` is 3"),
         ("camel case is valid.", "`isValid`."),
         ("Store camel case max depth. Later, max depth grows.", "Store `maxDepth`. Later, `maxDepth` grows."),
+        ("Max depth matters. Set camel case max depth to 0.", "Max depth matters. Set `maxDepth` to 0."),
+        ("Call (camel case max depth).", "Call (`maxDepth`)."),
     ])
     func converts(_ said: String, _ typed: String) {
         #expect(CodeNotation.apply(said) == typed)
@@ -147,6 +157,8 @@ struct IdentifierTests {
         "We use snake, case by case.",
         "camel case",
         "write it in snake case",
+        "I prefer snake case names.",
+        "say `camel case max depth` is valid",
     ])
     func leavesProse(_ said: String) {
         #expect(CodeNotation.apply(said) == said)

@@ -33,6 +33,7 @@ struct PostProcessTests {
         ("x-ray it", "X-ray it"),
         ("i - unlike him - agree", "I - unlike him - agree"),
         ("i - 1 is the last", "i - 1 is the last"),
+        ("x is less than y squared", "x < y^2"),
         ("so it works", "So it works"),
     ])
     func sentenceCasingSkipsLeadingCode(_ said: String, _ typed: String) {
