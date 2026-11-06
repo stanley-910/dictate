@@ -255,7 +255,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setIcon("◐", color: .systemOrange)
         indicator.mode = .transcribing
         playSound(config.soundPack.stop)
-        dictation.text(from: pcm) { [weak self] result in
+        dictation.text(from: pcm, recording: true) { [weak self] result in
             DispatchQueue.main.async { self?.finish(result) }
         }
     }

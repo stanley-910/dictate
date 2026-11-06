@@ -65,6 +65,10 @@ enum Recovery {
                 for url in [take.audioURL, take.textURL] where fm.fileExists(atPath: url.path) {
                     try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
                 }
+                try fm.createSymbolicLink(atPath: audioURL.path, withDestinationPath: "recordings/" + take.audioURL.lastPathComponent)
+                if fm.fileExists(atPath: take.textURL.path) {
+                    try fm.createSymbolicLink(atPath: textURL.path, withDestinationPath: "recordings/" + take.textURL.lastPathComponent)
+                }
                 log("moved \(audioURL.lastPathComponent) to recordings/\(take.id).wav")
             } catch {
                 log("could not move \(audioURL.lastPathComponent) into recordings: \(error)")
@@ -134,8 +138,8 @@ enum Recovery {
         }
 
         /// Gone, with the marker if it is the one in progress.
-        func delete() {
-            write {
+        func delete(wait: Bool = false) {
+            write(wait: wait) {
                 for url in [audioURL, textURL] { try? FileManager.default.removeItem(at: url) }
                 if (try? String(contentsOf: markerURL, encoding: .utf8)) == id {
                     try? FileManager.default.removeItem(at: markerURL)
@@ -161,9 +165,15 @@ enum Recovery {
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         }
 
-        /// `name` -> `target`, relative so the folder can move.
+        /// `name` -> `target`, relative so the folder can move. A regular
+        /// file there (from before recordings were kept) is never deleted.
         private func link(_ target: URL, as name: URL) throws {
-            try? FileManager.default.removeItem(at: name)
+            let fm = FileManager.default
+            if fm.fileExists(atPath: name.path), (try? fm.destinationOfSymbolicLink(atPath: name.path)) == nil {
+                log("not replacing \(name.lastPathComponent): not a link")
+                return
+            }
+            try? fm.removeItem(at: name)
             try FileManager.default.createSymbolicLink(
                 atPath: name.path, withDestinationPath: "recordings/" + target.lastPathComponent)
         }

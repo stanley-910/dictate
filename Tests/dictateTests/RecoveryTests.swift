@@ -74,7 +74,17 @@ import Testing
         let mode = try FileManager.default.attributesOfItem(atPath: moved.audioURL.path)[.posixPermissions] as? Int
         #expect(mode == 0o600)
         #expect(try Wav.readMono16k(moved.audioURL).count == 500)
+        #expect(Recovery.lastText == "old")
+        #expect(try Wav.readMono16k(Recovery.audioURL).count == 500)
         Recovery.migrate()  // nothing left to move
         #expect(Recovery.recent().count == 1)
+    }
+
+    @Test func neverOverwritesAnOldLastRecording() throws {
+        try FileManager.default.createDirectory(at: Recovery.directory, withIntermediateDirectories: true)
+        try Wav.write16k([Float](repeating: 0.1, count: 500), to: Recovery.audioURL)
+        Self.take(9).saveAudio([0.1], done: true)
+        Recovery.flush()
+        #expect(try Wav.readMono16k(Recovery.audioURL).count == 500)
     }
 }

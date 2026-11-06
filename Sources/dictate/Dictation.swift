@@ -35,6 +35,8 @@ final class Dictation {
         try recorder.start(device: AudioDevices.resolve(configured: config.microphone))
         transcriber.preload()
         let take = config.keepRecordings > 0 ? Recovery.Take.new() : nil
+        // `dictate listen` too, not only the app's launch: the old last.wav is moved, never overwritten.
+        if take != nil { Recovery.migrate() }
         if let take {
             Recovery.prune(keep: config.keepRecordings - 1)
             take.begin()
@@ -63,7 +65,7 @@ final class Dictation {
         let pcm = recorder.stop()
         mute.release()
         if wasRecording, let take {
-            if seconds >= config.minimumSeconds { take.saveAudio(pcm, done: true, wait: wait) } else { take.delete() }
+            if seconds >= config.minimumSeconds { take.saveAudio(pcm, done: true, wait: wait) } else { take.delete(wait: wait) }
         }
         return (pcm, seconds)
     }
@@ -73,11 +75,13 @@ final class Dictation {
         seconds < config.minimumSeconds
     }
 
-    /// Transcribes in pieces cut at quiet points, then post-processes. The
-    /// recording just stopped picks up from the pieces decoded while it ran;
-    /// other audio (a file) is decoded whole. Completion runs on the
-    /// transcriber's queue.
-    func text(from pcm: [Float], completion: @escaping (Result<String, Error>) -> Void) {
+    /// Transcribes in pieces cut at quiet points, then post-processes. With
+    /// `recording`, `pcm` is the recording just stopped and it picks up from
+    /// the pieces decoded while it ran; other audio (a saved file) is decoded
+    /// whole, and a cancelled recording's pieces are dropped. Completion runs
+    /// on the transcriber's queue.
+    func text(from pcm: [Float], recording: Bool = false, completion: @escaping (Result<String, Error>) -> Void) {
+        if !recording { live = nil }
         let take = live != nil ? self.take : nil
         let done: (Result<String, Error>) -> Void = { [transcriber] result in
             let result = result.map { transcriber.config.postProcess($0) }
