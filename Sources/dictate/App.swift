@@ -13,6 +13,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let micMenu = NSMenu(title: "Microphone")
     private let styleMenu = NSMenu(title: "Style")
     private let cheatMenu = NSMenu(title: "Cheat Sheet")
+    private let recentMenu = NSMenu(title: "Recent Recordings")
     private let dictionaryWindow = DictionaryWindow()
     private var state: State = .idle
     private var maxTimer: Timer?
@@ -39,6 +40,10 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         setupMainMenu()
+        Recovery.migrate()
+        if let take = Recovery.interrupted() {
+            log("recording \(take.id) was interrupted (\(Int(take.seconds)) s kept); it is in Recent Recordings")
+        }
         requestPermissions()
         startListening()
         configModified = Config.modified
@@ -162,12 +167,16 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         playSound(config.soundPack.start)
         dictation.muteSpeakersIfConfigured()
-        maxTimer?.invalidate()
+        stopTimers()
         maxTimer = Timer.scheduledTimer(withTimeInterval: config.maximumSeconds, repeats: false) { [weak self] _ in
             guard let self else { return }
             log("reached maximumSeconds (\(Int(self.config.maximumSeconds)) s); stopping")
             self.stopAndTranscribe()
         }
+    }
+
+    private func stopTimers() {
+        maxTimer?.invalidate()
     }
 
     /// Short recordings cancel on one Escape; long ones arm on the first press
@@ -203,7 +212,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func cancel() {
         disarmCancel()
-        maxTimer?.invalidate()
+        stopTimers()
         _ = dictation.stop()
         state = .idle
         setIcon("○")
@@ -215,7 +224,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func stopAndTranscribe() {
         guard state == .recording else { return }
         disarmCancel()
-        maxTimer?.invalidate()
+        stopTimers()
         let (pcm, seconds) = dictation.stop()
         stopFlags = listener?.lastFlags ?? []
         if dictation.isTooShort(seconds) {
@@ -297,6 +306,10 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let lastAudio = NSMenuItem(title: "Transcribe Last Recording", action: #selector(transcribeLastRecording), keyEquivalent: "")
         lastAudio.target = self
         menu.addItem(lastAudio)
+        let recentItem = NSMenuItem(title: "Recent Recordings", action: nil, keyEquivalent: "")
+        recentMenu.delegate = self
+        recentItem.submenu = recentMenu
+        menu.addItem(recentItem)
         menu.addItem(NSMenuItem.separator())
         let copyPath = NSMenuItem(title: "Copy Config Path", action: #selector(copyConfigPath), keyEquivalent: "")
         copyPath.target = self
@@ -333,13 +346,71 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Paster.copy(text)
     }
 
-    /// Decodes the saved recording again and copies the text: for a recording
-    /// that failed, was cancelled by mistake, or pasted into the wrong place.
+    /// Decodes the newest saved recording again and copies the text: for a
+    /// recording that failed, was cancelled by mistake, or pasted into the
+    /// wrong place.
     @objc private func transcribeLastRecording() {
+        guard let take = Recovery.recent().first else {
+            log("no saved recording")
+            return beep()
+        }
+        retranscribe(take)
+    }
+
+    /// One row per saved recording: copies its text, or with Option held,
+    /// decodes it again (also what a row with no text does).
+    private func updateRecentMenu() {
+        recentMenu.removeAllItems()
+        let takes = Recovery.recent()
+        if takes.isEmpty {
+            recentMenu.addItem(NSMenuItem(title: "None", action: nil, keyEquivalent: ""))
+            return
+        }
+        let time = DateFormatter()
+        time.dateFormat = "MMM d, HH:mm"
+        for take in takes {
+            let when = take.date.map(time.string(from:)) ?? take.id
+            let length = Int(take.seconds.rounded())
+            let text = take.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let preview = text.isEmpty ? "no text" : (text.count > 40 ? text.prefix(40) + "…" : text)
+            let copy = NSMenuItem(title: "\(when) · \(length / 60):\(String(format: "%02d", length % 60)) · \(preview)",
+                                  action: #selector(recentPicked(_:)), keyEquivalent: "")
+            copy.target = self
+            copy.representedObject = take.id
+            recentMenu.addItem(copy)
+            let again = NSMenuItem(title: "Transcribe \(when) Again", action: #selector(recentRetranscribe(_:)), keyEquivalent: "")
+            again.target = self
+            again.representedObject = take.id
+            again.isAlternate = true
+            again.keyEquivalentModifierMask = .option
+            recentMenu.addItem(again)
+        }
+        recentMenu.addItem(NSMenuItem.separator())
+        let folder = NSMenuItem(title: "Show in Finder", action: #selector(showRecordings), keyEquivalent: "")
+        folder.target = self
+        recentMenu.addItem(folder)
+    }
+
+    @objc private func recentPicked(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        let take = Recovery.Take(id: id)
+        if let text = take.text, !text.isEmpty { Paster.copy(text) } else { retranscribe(take) }
+    }
+
+    @objc private func recentRetranscribe(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        retranscribe(Recovery.Take(id: id))
+    }
+
+    @objc private func showRecordings() {
+        NSWorkspace.shared.open(Recovery.recordings)
+    }
+
+    private func retranscribe(_ take: Recovery.Take) {
         guard state == .idle else { return beep() }
         let pcm: [Float]
-        do { pcm = try Wav.readMono16k(Recovery.audioURL) } catch {
-            log("no saved recording: \(error)")
+        do { pcm = try Wav.readMono16k(take.audioURL) } catch {
+            log("could not read recording \(take.id): \(error)")
             return beep()
         }
         state = .transcribing
@@ -351,10 +422,10 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.setIcon("○")
                 switch result {
                 case .success(let text):
-                    Recovery.saveText(text)
+                    take.saveText(text)
                     Paster.copy(text)
                     self.playSound(self.config.soundPack.stop)
-                    log("copied last recording")
+                    log("copied recording \(take.id)")
                 case .failure(let error):
                     log("transcribe failed: \(error)")
                     self.beep()
@@ -387,6 +458,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case micMenu: updateMicrophoneMenu()
         case styleMenu: updateStyleMenu()
         case cheatMenu: updateCheatMenu()
+        case recentMenu: updateRecentMenu()
         default: break
         }
     }

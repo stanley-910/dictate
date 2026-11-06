@@ -119,10 +119,15 @@ security delete-identity -c dictate-dev                                 # if you
   decoded; on those the model makes up "Thank you." and the like.
 - `maximumSeconds` (default 600) stops and transcribes a recording left
   running.
-- Every recording is saved to `~/.local/state/dictate/last.wav` when it
-  stops, cancelled ones and one cut short by quitting included, and its text
-  to `last.txt`. Menu bar > Copy Last Transcript copies the text again;
-  Transcribe Last Recording decodes the audio again and copies the result.
+- The last `keepRecordings` (default 5) recordings are kept in
+  `~/.local/state/dictate/recordings/` as `<time>.wav` with a `.txt` beside
+  it, owner-readable only; cancelled ones and one cut short by quitting
+  included. `last.wav` and `last.txt` link to the newest. While recording,
+  the audio and text so far are saved after each piece decodes, so a crash
+  or forced quit keeps all but the last half minute; the next launch logs it.
+  Menu bar > Copy Last Transcript copies the text again; Transcribe Last
+  Recording decodes the audio again and copies the result; Recent Recordings
+  copies an older one's text (hold Option to decode it again). 0 keeps none.
 - Pauses longer than `maxPauseSeconds` (default 0.6) are shortened to it before
   decoding, since the model spends as long on silence as on speech. The log
   line shows how much audio was left. Set 0 to keep every pause.

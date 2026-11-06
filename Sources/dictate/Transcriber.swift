@@ -71,8 +71,9 @@ final class Transcriber {
 
     /// Starts transcribing a recording while it is still being made.
     /// `recorded(from:)` returns the audio from a sample index on, so far.
-    func begin(recorded: @escaping (Int) -> [Float]) -> LiveTranscript {
-        LiveTranscript(transcriber: self, maxSeconds: config.chunkSeconds, recorded: recorded)
+    /// `progress` gets the text so far after each piece, on the transcriber's queue.
+    func begin(recorded: @escaping (Int) -> [Float], progress: @escaping (String) -> Void = { _ in }) -> LiveTranscript {
+        LiveTranscript(transcriber: self, maxSeconds: config.chunkSeconds, recorded: recorded, progress: progress)
     }
 
     /// One piece, long pauses shortened; also how many samples the model got.
@@ -152,8 +153,10 @@ private struct Pieces {
     /// The text; a failure only when no piece decoded (a missing model, say).
     var result: Result<String, Error> {
         if let lastError, skipped == count { return .failure(lastError) }
-        return .success(parts.joined(separator: " "))
+        return .success(text)
     }
+
+    var text: String { parts.joined(separator: " ") }
 
     var summary: String {
         "\(count) chunk\(count == 1 ? "" : "s")" + (skipped > 0 ? ", \(skipped) failed" : "")
@@ -201,15 +204,18 @@ final class LiveTranscript {
     private let transcriber: Transcriber
     private let maxSeconds: Double
     private let recorded: (Int) -> [Float]
+    private let progress: (String) -> Void
     private let timer: DispatchSourceTimer
     // Touched only on the transcriber's queue.
     private var decoded = 0
     private var pieces = Pieces()
 
-    fileprivate init(transcriber: Transcriber, maxSeconds: Double, recorded: @escaping (Int) -> [Float]) {
+    fileprivate init(transcriber: Transcriber, maxSeconds: Double, recorded: @escaping (Int) -> [Float],
+                     progress: @escaping (String) -> Void) {
         self.transcriber = transcriber
         self.maxSeconds = maxSeconds
         self.recorded = recorded
+        self.progress = progress
         // On the model's queue: polls wait behind a decode instead of piling up.
         timer = DispatchSource.makeTimerSource(queue: transcriber.queue)
         timer.schedule(deadline: .now() + Self.pollSeconds, repeating: Self.pollSeconds, leeway: .milliseconds(250))
@@ -248,6 +254,7 @@ final class LiveTranscript {
             decoded += cut - start
             start = cut
         }
+        if start > 0 { progress(pieces.text) }
     }
 }
 

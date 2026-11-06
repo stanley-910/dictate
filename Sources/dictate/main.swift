@@ -25,10 +25,10 @@ case "transcribe":
         }
         if live {
             let t0 = Date()
-            let transcript = dictation.transcriber.begin { from in
+            let transcript = dictation.transcriber.begin(recorded: { from in
                 let now = min(pcm.count, Int(Date().timeIntervalSince(t0) * Recorder.targetRate))
                 return from < now ? Array(pcm[from..<now]) : []
-            }
+            }) { text in log("so far: \(text.split(separator: " ").count) words") }
             Thread.sleep(forTimeInterval: Double(pcm.count) / Recorder.targetRate)
             transcript.finish(pcm) { print($0.map { config.postProcess($0) }) }
         } else {

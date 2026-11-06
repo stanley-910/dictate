@@ -53,6 +53,9 @@ struct Config: Codable {
     /// A safety stop for a recording left running; pieces decode as they
     /// arrive, so length costs little.
     var maximumSeconds: Double = 600
+    /// Recordings kept in ~/.local/state/dictate/recordings, with their text,
+    /// to transcribe or copy again from the menu. 0 = keep none.
+    var keepRecordings: Int = 5
     /// Recordings are transcribed in pieces no longer than this (seconds), cut
     /// at the quietest moment in the last part of each piece. The model drifts
     /// and repeats itself on longer single passes. 0 = never split.
@@ -164,6 +167,7 @@ struct Config: Codable {
         trailingSpace = try c.decodeIfPresent(Bool.self, forKey: .trailingSpace) ?? d.trailingSpace
         minimumSeconds = try c.decodeIfPresent(Double.self, forKey: .minimumSeconds) ?? d.minimumSeconds
         maximumSeconds = try c.decodeIfPresent(Double.self, forKey: .maximumSeconds) ?? d.maximumSeconds
+        keepRecordings = try c.decodeIfPresent(Int.self, forKey: .keepRecordings) ?? d.keepRecordings
         chunkSeconds = try c.decodeIfPresent(Double.self, forKey: .chunkSeconds) ?? d.chunkSeconds
         maxPauseSeconds = try c.decodeIfPresent(Double.self, forKey: .maxPauseSeconds) ?? d.maxPauseSeconds
         cancelConfirmAfterSeconds = try c.decodeIfPresent(Double.self, forKey: .cancelConfirmAfterSeconds) ?? d.cancelConfirmAfterSeconds

@@ -9,6 +9,8 @@ final class Dictation {
     private let mute = OutputMute()
     /// The recording in progress (or just stopped), decoded as it comes in.
     private var live: LiveTranscript?
+    /// Its files; nil when `keepRecordings` is 0.
+    private var take: Recovery.Take?
 
     /// Read at each use; a new model path drops the loaded one.
     var config: Config {
@@ -26,11 +28,23 @@ final class Dictation {
     /// Opens the menu bar pick (or config `microphone`, else the system
     /// default), starts loading the model, and decodes full pieces as they
     /// arrive so the stop is fast.
+    /// With `keepRecordings` above 0, the audio and text so far are saved
+    /// after each piece, so a crash or a forced quit keeps nearly all of it.
     func start() throws {
         live = nil
         try recorder.start(device: AudioDevices.resolve(configured: config.microphone))
         transcriber.preload()
-        live = transcriber.begin { [recorder] in recorder.recorded(from: $0) }
+        let take = config.keepRecordings > 0 ? Recovery.Take.new() : nil
+        if let take {
+            Recovery.prune(keep: config.keepRecordings - 1)
+            take.begin()
+        }
+        self.take = take
+        live = transcriber.begin(recorded: { [recorder] in recorder.recorded(from: $0) }) { [recorder, transcriber] text in
+            guard let take else { return }
+            take.saveAudio(recorder.recorded(from: 0))
+            take.saveText(transcriber.config.postProcess(text))
+        }
     }
 
     /// Separate from `start` so the daemon's start sound is not muted.
@@ -48,7 +62,9 @@ final class Dictation {
         live?.stop()
         let pcm = recorder.stop()
         mute.release()
-        if wasRecording, seconds >= config.minimumSeconds { Recovery.saveAudio(pcm, wait: wait) }
+        if wasRecording, let take {
+            if seconds >= config.minimumSeconds { take.saveAudio(pcm, done: true, wait: wait) } else { take.delete() }
+        }
         return (pcm, seconds)
     }
 
@@ -62,17 +78,17 @@ final class Dictation {
     /// other audio (a file) is decoded whole. Completion runs on the
     /// transcriber's queue.
     func text(from pcm: [Float], completion: @escaping (Result<String, Error>) -> Void) {
-        let isRecording = live != nil
+        let take = live != nil ? self.take : nil
         let done: (Result<String, Error>) -> Void = { [transcriber] result in
             let result = result.map { transcriber.config.postProcess($0) }
-            if isRecording, case .success(let text) = result, !text.isEmpty { Recovery.saveText(text) }
+            if let take, case .success(let text) = result, !text.isEmpty { take.saveText(text) }
             completion(result)
         }
         if let live {
             self.live = nil
             live.finish(pcm) { result in
-                if case .failure = result {
-                    log("recording kept at \(Recovery.audioURL.path); dictate transcribe it to retry")
+                if case .failure = result, let take {
+                    log("recording kept at \(take.audioURL.path); dictate transcribe it to retry")
                 }
                 done(result)
             }
