@@ -1,12 +1,18 @@
 import Foundation
 
 /// Writes spoken code talk the way it is typed: "O of n log n" -> "O(n log n)",
-/// "4 minus 52" -> "4 - 52", and "take this string s and reverse s" -> "take
-/// this string `s` and reverse `s`". The model writes numbers as digits but
-/// spells the rest out in words.
+/// "4 minus 52" -> "4 - 52", "take this string s and reverse s" -> "take
+/// this string `s` and reverse `s`", and "s of i equals s of j" -> "`s[i] ==
+/// s[j]`". The model writes
+/// numbers as digits but spells the rest out in words.
 enum CodeNotation {
-    static func apply(_ text: String) -> String {
-        backtickVariables(arithmetic(bigO(text)))
+    /// With `spans`, every converted expression is put in backticks, not
+    /// only those that use a declared variable: "`4 - 52`", "`O(n)`".
+    static func apply(_ text: String, spans: Bool = false) -> String {
+        var out = bigO(text, spans: spans)
+        let names = declaredNames(out)
+        out = arithmetic(out, names: names, spans: spans)
+        return backtickVariables(out, names: names)
     }
 
     /// Whether `text` opens with a variable or an expression ("x^2 + 1",
@@ -32,19 +38,26 @@ enum CodeNotation {
     // MARK: arithmetic
 
     /// Operator words between operands: "4 minus 52" -> "4 - 52", "i mod n"
-    /// -> "i % n", "x squared plus 1" -> "x^2 + 1", "negative 48" -> "-48".
-    /// It needs an operand on each side, so "5 plus years", "C plus plus" and
-    /// "three times a day" stay as they are.
-    static func arithmetic(_ text: String) -> String {
+    /// -> "i % n", "x squared plus 1" -> "x^2 + 1", "negative 48" -> "-48",
+    /// "n is at least 2" -> "n >= 2", and for a declared variable "s of i"
+    /// or "s at i" -> "s[i]". It needs an operand on each side, so "5 plus
+    /// years", "C plus plus" and "three times a day" stay as they are. An
+    /// expression that uses a declared variable goes in backticks whole.
+    static func arithmetic(_ text: String, names: Set<String> = [], spans: Bool = false) -> String {
         let chars = Array(text)
         var out = ""
         var i = 0
         while i < chars.count {
+            if let end = spanEnd(chars, i) {
+                out += String(chars[i..<end])
+                i = end
+                continue
+            }
             if isWordStart(chars, i), chars[i].isLetter || chars[i].isNumber {
                 let toks = tokens(chars, from: i, first: true)
-                if let (expr, used) = Expression.parse(toks.map { $0.0 }, arithmetic: true), used > 0 {
-                    out += expr
-                    i = toks[used - 1].1
+                if let found = Expression.parse(toks.map { $0.0 }, mode: .arithmetic, names: names), found.used > 0 {
+                    out += spans || found.usesName ? "`\(found.text)`" : found.text
+                    i = toks[found.used - 1].1
                     continue
                 }
             }
@@ -54,19 +67,29 @@ enum CodeNotation {
         return out
     }
 
+    /// Past the closing backtick when a code span opens at `i`: code already
+    /// written is left alone.
+    private static func spanEnd(_ c: [Character], _ i: Int) -> Int? {
+        guard c[i] == "`", let close = c[(i + 1)...].firstIndex(of: "`") else { return nil }
+        return close + 1
+    }
+
     // MARK: Big-O
 
     /// "O", "big O" or "oh of", then a math phrase: letters, numbers, log,
     /// squared, to the X, plus, times, factorial, square root of. The phrase
     /// ends at the first word that is not math, so "O of n time" keeps "time"
     /// and "big O notation" is left alone.
-    static func bigO(_ text: String) -> String {
+    static func bigO(_ text: String, spans: Bool = false) -> String {
         let chars = Array(text)
         var out = ""
         var i = 0
         while i < chars.count {
-            if isWordStart(chars, i), let (expr, end) = parseBigO(chars, from: i) {
-                out += "O(\(expr))"
+            if let end = spanEnd(chars, i) {
+                out += String(chars[i..<end])
+                i = end
+            } else if isWordStart(chars, i), let (expr, end) = parseBigO(chars, from: i) {
+                out += spans ? "`O(\(expr))`" : "O(\(expr))"
                 i = end
             } else {
                 out.append(chars[i])
@@ -96,6 +119,12 @@ enum CodeNotation {
         while true {
             var k = j
             while k < c.count, c[k] == " " { k += 1 }
+            // An operator the model wrote itself, alone between spaces: "i + 1".
+            if k > j, k < c.count, "+-*/%".contains(c[k]), k + 1 < c.count, c[k + 1] == " " {
+                out.append((String(c[k]), k + 1))
+                j = k + 1
+                continue
+            }
             guard k > j || (out.isEmpty && k < c.count && (first || c[k].isNumber)), let (w, end) = word(c, k) else { break }
             out.append((w, end))
             j = end
@@ -128,7 +157,8 @@ enum CodeNotation {
         } else if lower == "oh" {
             return nil  // "oh n" is not how anyone says it; "oh, so" must stay
         }
-        guard let (expr, used) = Expression.parse(toks.map { $0.0 }), used > 0 else { return nil }
+        guard let found = Expression.parse(toks.map { $0.0 }, mode: .bigO), found.used > 0 else { return nil }
+        let (expr, used) = (found.text, found.used)
         // "oh of one thing" is not O(1): a spelled number alone only counts at
         // the end of a clause or before a word that says what is O(1).
         if used == 1, Expression.numbers[toks[0].0.lowercased()] != nil, used < toks.count,
@@ -140,25 +170,44 @@ enum CodeNotation {
 
     /// A small grammar over spoken math words. Parsing is greedy and keeps the
     /// last point where the phrase was complete, so "O of n plus and" gives
-    /// O(n) and leaves "plus and". Outside O(...) (`arithmetic`) a phrase
-    /// needs an operator to count, "I" before one is the variable i, and
-    /// "log" and a bare "root" are words ("write to the log 2 times").
+    /// O(n) and leaves "plus and". Outside O(...) a phrase needs an operator
+    /// to count, "I" before one is the variable i, and "log" and a bare
+    /// "root" are words ("write to the log 2 times"). Inside brackets
+    /// (`index`) a lone operand counts and there are no comparisons.
     private struct Expression {
+        enum Mode { case bigO, arithmetic, index }
+        struct Found { var text: String; var used: Int; var usesName: Bool }
+
         static let numbers = ["zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
                               "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10"]
         static let ordinals = ["second": "2", "third": "3", "fourth": "4", "fifth": "5"]
-        static let operators = ["plus": "+", "minus": "-", "times": "*", "over": "/", "mod": "%", "modulo": "%"]
+        static let operators = ["plus": "+", "minus": "-", "times": "*", "over": "/", "mod": "%", "modulo": "%",
+                                "+": "+", "-": "-", "*": "*", "/": "/", "%": "%"]
+        /// Longest first, so "less than or equal to" wins over "less than".
+        static let comparisons: [([String], String)] = [
+            (["is", "less", "than", "or", "equal", "to"], "<="), (["less", "than", "or", "equal", "to"], "<="),
+            (["is", "greater", "than", "or", "equal", "to"], ">="), (["greater", "than", "or", "equal", "to"], ">="),
+            (["is", "not", "equal", "to"], "!="), (["does", "not", "equal"], "!="), (["not", "equal", "to"], "!="),
+            (["is", "less", "than"], "<"), (["is", "greater", "than"], ">"), (["is", "equal", "to"], "=="),
+            (["is", "at", "most"], "<="), (["is", "at", "least"], ">="), (["is", "set", "to"], "="),
+            (["less", "than"], "<"), (["greater", "than"], ">"), (["equal", "to"], "=="),
+            (["double", "equals"], "=="), (["at", "most"], "<="), (["at", "least"], ">="),
+            (["equals"], "=="),
+        ]
 
         let words: [String]
-        let arithmetic: Bool
+        let mode: Mode
+        let names: Set<String>
         var i = 0
         var out = ""
-        var best: (String, Int)?
+        var best: Found?
         /// An operator, power, factorial or sign so far: plain "4" is not math.
         private var sawMath = false
+        private var usesName = false
+        private var arithmetic: Bool { mode != .bigO }
 
-        static func parse(_ words: [String], arithmetic: Bool = false) -> (String, Int)? {
-            var e = Expression(words: words, arithmetic: arithmetic)
+        static func parse(_ words: [String], mode: Mode, names: Set<String> = []) -> Found? {
+            var e = Expression(words: words, mode: mode, names: names)
             e.run()
             return e.best
         }
@@ -166,6 +215,15 @@ enum CodeNotation {
         private func isOperator(_ w: String?) -> Bool {
             guard let w else { return false }
             return Self.operators[w] != nil || w == "divided" || w == "squared" || w == "cubed"
+        }
+
+        /// The comparison spoken at `k` words ahead, and how many words it takes.
+        private func comparison(_ k: Int = 0) -> (String, Int)? {
+            guard mode == .arithmetic else { return nil }
+            for (spoken, op) in Self.comparisons where i + k + spoken.count <= words.count {
+                if words[(i + k)..<(i + k + spoken.count)].map({ $0.lowercased() }) == spoken { return (op, spoken.count) }
+            }
+            return nil
         }
 
         private func peek(_ k: Int = 0) -> String? {
@@ -190,8 +248,8 @@ enum CodeNotation {
             while i < words.count {
                 var w = words[i]
                 let lw = w.lowercased()
-                // "I mod n": the model capitalizes the variable i.
-                if arithmetic, w == "I", expectOperand, isOperator(peek(1)) { w = "i" }
+                // "I mod n", "s of I": the model capitalizes the variable i.
+                if arithmetic, w == "I", expectOperand, mode == .index || isOperator(peek(1)) || comparison(1) != nil { w = "i" }
                 if expectOperand, lw == "negative", let o = operand(peek(1).map { _ in words[i + 1] }) {
                     out += "-" + o
                     i += 2
@@ -224,6 +282,25 @@ enum CodeNotation {
                     i += 1
                     previousWasNumber = o.first!.isNumber
                     expectOperand = false
+                    if names.contains(o) {
+                        usesName = true
+                        // "s of i plus 1" -> s[i + 1]
+                        if peek() == "of" || peek() == "at", i + 1 < words.count,
+                           let sub = Expression.parse(Array(words[(i + 1)...]), mode: .index, names: names) {
+                            out += "[\(sub.text)]"
+                            i += 1 + sub.used
+                            sawMath = true
+                        }
+                    }
+                } else if !expectOperand, let (op, length) = comparison(),
+                          // "at least 3 people" is prose; "n is at least 3" is not.
+                          !(previousWasNumber && op.count == 2 && words[i + length - 2].lowercased() == "at") {
+                    out += " \(op) "
+                    i += length
+                    sawMath = true
+                    expectOperand = true
+                    previousWasNumber = false
+                    continue
                 } else if !expectOperand, lw == "squared" || lw == "cubed" {
                     out += lw == "squared" ? "^2" : "^3"
                     i += 1
@@ -256,7 +333,7 @@ enum CodeNotation {
                 } else {
                     return
                 }
-                if !expectOperand, sawMath || !arithmetic { best = (out, i) }
+                if !expectOperand, sawMath || mode != .arithmetic { best = Found(text: out, used: i, usesName: usesName) }
             }
         }
     }
@@ -277,9 +354,24 @@ enum CodeNotation {
 
     /// A single letter right after a type word ("string s", "pointers i and
     /// j") becomes `s`, and so does every standalone use of that letter in the
-    /// rest of the text. Letters never introduced that way are left alone, so
-    /// "plan B" and "C" (the language) stay as they are.
-    static func backtickVariables(_ text: String) -> String {
+    /// rest of the text, outside code already in backticks. Letters never
+    /// introduced that way are left alone, so "plan B" and "C" (the language)
+    /// stay as they are.
+    static func backtickVariables(_ text: String, names: Set<String>? = nil) -> String {
+        let names = names ?? declaredNames(text)
+        guard !names.isEmpty else { return text }
+        var inSpan = false
+        return text.split(separator: " ", omittingEmptySubsequences: false).map { word in
+            let w = String(word)
+            defer { if w.filter({ $0 == "`" }).count % 2 == 1 { inSpan.toggle() } }
+            guard !inSpan, let name = letter(w), names.contains(name) else { return w }
+            // The letter, then whatever punctuation followed it.
+            return "`\(name)`" + w.dropFirst()
+        }.joined(separator: " ")
+    }
+
+    /// The letters introduced as variables: "string s", "pointers i and j".
+    static func declaredNames(_ text: String) -> Set<String> {
         let words = text.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
         var names: Set<String> = []
         var i = 0
@@ -297,12 +389,7 @@ enum CodeNotation {
             }
             i += 1
         }
-        guard !names.isEmpty else { return text }
-        return words.map { w in
-            guard let name = letter(w), names.contains(name) else { return w }
-            // The letter, then whatever punctuation followed it.
-            return "`\(name)`" + w.dropFirst()
-        }.joined(separator: " ")
+        return names
     }
 
     /// The variable a word is, when it is one letter followed by nothing but

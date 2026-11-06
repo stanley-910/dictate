@@ -78,6 +78,9 @@ struct Config: Codable {
     /// Write spoken code talk as typed: "O of n log n" -> "O(n log n)", and a
     /// letter named after a type word ("the string s") in backticks.
     var codeNotation: Bool = true
+    /// Put every expression `codeNotation` writes in backticks ("`4 - 52`",
+    /// "`O(n)`"), not only those with a declared variable, for Markdown.
+    var codeSpans: Bool = false
     /// Spoken phrases listed in menu bar > Cheat Sheet with what the
     /// replacements turn them into, e.g. "wink smile face" -> ";)".
     var cheatSheet: [String] = []
@@ -198,6 +201,7 @@ struct Config: Codable {
         replacements = try c.decodeIfPresent([Replacement].self, forKey: .replacements) ?? d.replacements
         cheatSheet = try c.decodeIfPresent([String].self, forKey: .cheatSheet) ?? d.cheatSheet
         codeNotation = try c.decodeIfPresent(Bool.self, forKey: .codeNotation) ?? d.codeNotation
+        codeSpans = try c.decodeIfPresent(Bool.self, forKey: .codeSpans) ?? d.codeSpans
     }
 
     static var path: URL {
@@ -244,7 +248,7 @@ struct Config: Codable {
         let text = casing == .lower ? raw.lowercased() : raw
         let fixed = Dictionary.apply(text, terms: Dictionary.terms(dictionary), threshold: dictionaryThreshold)
         var out = Replacements.apply(fixed, rules: replacements)
-        if codeNotation { out = CodeNotation.apply(out) }
+        if codeNotation { out = CodeNotation.apply(out, spans: codeSpans) }
         if casing == .sentence, let first = out.first, first.isLowercase, !CodeNotation.startsWithCode(out) {
             out = first.uppercased() + out.dropFirst()
         }

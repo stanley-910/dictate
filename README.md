@@ -190,6 +190,14 @@ security delete-identity -c dictate-dev                                 # if you
   ("the string s", "pointers i and j", "target k") is put in backticks, and
   so is every later standalone use of it. Letters never introduced that way
   ("plan B", "C") are left alone.
+  Comparisons: "is less than" -> `<`, "is greater than or equal to" -> `>=`,
+  "equals" / "is equal to" -> `==`, "is not equal to" / "does not equal" ->
+  `!=`, "is at most" / "is at least" -> `<=` / `>=` (not after a number, so
+  "5 at least" stays), "is set to" -> `=`. Indexing, for a declared
+  variable: "s of i" / "s at i" -> `s[i]`, "s of i plus 1" -> `s[i + 1]`.
+  An expression that uses a declared variable is put in backticks whole:
+  "s of i equals s of j" -> `` `s[i] == s[j]` ``. `codeSpans: true` puts
+  every expression in backticks (`` `4 - 52` ``, `` `O(n)` ``), for Markdown.
 - Menu bar > Dictionary (Cmd-D while the menu is open) edits `dictionary`
   in a window, one term per line; Save writes the config file (keys come
   out sorted and pretty-printed, a symlinked file stays a link).

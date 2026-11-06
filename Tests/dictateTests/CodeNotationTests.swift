@@ -79,3 +79,50 @@ struct CodeNotationTests {
         #expect(CodeNotation.apply(said) == said)
     }
 }
+
+struct IndexingAndComparisonTests {
+    @Test(arguments: [
+        ("Take the string s. Move i forward until s of i equals s of j.",
+         "Take the string `s`. Move i forward until `s[i] == s[j]`."),
+        ("Take the string S move I forward until S of I equals S of J.",
+         "Take the string `S` move I forward until `S[i] == S[J]`."),
+        ("Take string s, then check if s at i + 1 is less than or equal to x.",
+         "Take string `s`, then check if `s[i + 1] <= x`."),
+        ("Read the array b of i plus one and the array c at k.", "Read the array `b[i + 1]` and the array `c[k]`."),
+        ("pointers i and j. While i is less than j, move i.", "pointers `i` and `j`. While `i < j`, move `i`."),
+        ("If i is not equal to j and n is greater than or equal to 2, return.", "If i != j and n >= 2, return."),
+        ("x is less than 5 and y equals 2", "x < 5 and y == 2"),
+        ("n is at least 2", "n >= 2"),
+        ("x does not equal y", "x != y"),
+        ("x is set to 4", "x = 4"),
+        ("I is at most 3", "i <= 3"),
+    ])
+    func converts(_ said: String, _ typed: String) {
+        #expect(CodeNotation.apply(said) == typed)
+    }
+
+    @Test(arguments: [
+        "The counter is at least 3 and at most 10.",
+        "at least 3 people came",
+        "it is 5 at least",
+        "this is less than ideal",
+        "one is equal to the other",
+        "i - unlike him - we agree",
+        "the length of s is 3",
+        "swap s of i and s of j",  // s never declared
+    ])
+    func leavesProse(_ said: String) {
+        #expect(CodeNotation.apply(said) == said)
+    }
+
+    @Test(arguments: [
+        ("4 minus 52", "`4 - 52`"),
+        ("it is O of n log n time", "it is `O(n log n)` time"),
+        ("the string s and s of i", "the string `s` and `s[i]`"),
+        ("5 plus years", "5 plus years"),
+    ])
+    func codeSpans(_ said: String, _ typed: String) {
+        #expect(CodeNotation.apply(said, spans: true) == typed)
+    }
+}
+
