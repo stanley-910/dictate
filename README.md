@@ -177,7 +177,10 @@ security delete-identity -c dictate-dev                                 # if you
   `factorial`, `square root of`; the phrase ends at the first word that is not
   math, so "big O notation" stays, and a spelled "one" alone only counts at
   the end of a clause or before a word like "time" or "lookups" ("oh of one
-  thing" stays). Variables: a letter right after a type word
+  thing" stays). Arithmetic: "4 minus 52" -> `4 - 52`, "i mod n" ->
+  `i % n`, "x plus y times 2" -> `x + y * 2`, "x squared" -> `x^2` in a
+  sum, "negative 48" -> `-48`; an operator needs an operand on each side, so
+  "5 plus years" and "C plus plus" stay. Variables: a letter right after a type word
   ("the string s", "pointers i and j", "target k") is put in backticks, and
   so is every later standalone use of it. Letters never introduced that way
   ("plan B", "C") are left alone.

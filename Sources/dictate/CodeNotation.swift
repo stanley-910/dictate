@@ -1,11 +1,37 @@
 import Foundation
 
 /// Writes spoken code talk the way it is typed: "O of n log n" -> "O(n log n)",
-/// and "take this string s and reverse s" -> "take this string `s` and
-/// reverse `s`". The model spells both out in words.
+/// "4 minus 52" -> "4 - 52", and "take this string s and reverse s" -> "take
+/// this string `s` and reverse `s`". The model writes numbers as digits but
+/// spells the rest out in words.
 enum CodeNotation {
     static func apply(_ text: String) -> String {
-        backtickVariables(bigO(text))
+        backtickVariables(arithmetic(bigO(text)))
+    }
+
+    // MARK: arithmetic
+
+    /// Operator words between operands: "4 minus 52" -> "4 - 52", "i mod n"
+    /// -> "i % n", "x squared plus 1" -> "x^2 + 1", "negative 48" -> "-48".
+    /// It needs an operand on each side, so "5 plus years", "C plus plus" and
+    /// "three times a day" stay as they are.
+    static func arithmetic(_ text: String) -> String {
+        let chars = Array(text)
+        var out = ""
+        var i = 0
+        while i < chars.count {
+            if isWordStart(chars, i), chars[i].isLetter || chars[i].isNumber {
+                let toks = tokens(chars, from: i, first: true)
+                if let (expr, used) = Expression.parse(toks.map { $0.0 }, arithmetic: true), used > 0 {
+                    out += expr
+                    i = toks[used - 1].1
+                    continue
+                }
+            }
+            out.append(chars[i])
+            i += 1
+        }
+        return out
     }
 
     // MARK: Big-O
@@ -41,15 +67,16 @@ enum CodeNotation {
         return j > i ? (String(c[i..<j]), j) : nil
     }
 
-    /// The words after `i`, each preceded by spaces, with where each ends.
-    /// Stops at punctuation: "O of 1, and" ends after "1".
-    private static func tokens(_ c: [Character], from i: Int) -> [(String, Int)] {
+    /// The words after `i`, each preceded by spaces, with where each ends;
+    /// with `first`, the word at `i` is the first of them. Stops at
+    /// punctuation: "O of 1, and" ends after "1".
+    private static func tokens(_ c: [Character], from i: Int, first: Bool = false) -> [(String, Int)] {
         var out: [(String, Int)] = []
         var j = i
         while true {
             var k = j
             while k < c.count, c[k] == " " { k += 1 }
-            guard k > j || (out.isEmpty && k < c.count && c[k].isNumber), let (w, end) = word(c, k) else { break }
+            guard k > j || (out.isEmpty && k < c.count && (first || c[k].isNumber)), let (w, end) = word(c, k) else { break }
             out.append((w, end))
             j = end
             if out.count > 24 { break }
@@ -93,22 +120,32 @@ enum CodeNotation {
 
     /// A small grammar over spoken math words. Parsing is greedy and keeps the
     /// last point where the phrase was complete, so "O of n plus and" gives
-    /// O(n) and leaves "plus and".
+    /// O(n) and leaves "plus and". Outside O(...) (`arithmetic`) a phrase
+    /// needs an operator to count, "I" before one is the variable i, and
+    /// "log" and a bare "root" are words ("write to the log 2 times").
     private struct Expression {
         static let numbers = ["zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
                               "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10"]
         static let ordinals = ["second": "2", "third": "3", "fourth": "4", "fifth": "5"]
-        static let operators = ["plus": "+", "minus": "-", "times": "*", "over": "/"]
+        static let operators = ["plus": "+", "minus": "-", "times": "*", "over": "/", "mod": "%", "modulo": "%"]
 
         let words: [String]
+        let arithmetic: Bool
         var i = 0
         var out = ""
         var best: (String, Int)?
+        /// An operator, power, factorial or sign so far: plain "4" is not math.
+        private var sawMath = false
 
-        static func parse(_ words: [String]) -> (String, Int)? {
-            var e = Expression(words: words)
+        static func parse(_ words: [String], arithmetic: Bool = false) -> (String, Int)? {
+            var e = Expression(words: words, arithmetic: arithmetic)
             e.run()
             return e.best
+        }
+
+        private func isOperator(_ w: String?) -> Bool {
+            guard let w else { return false }
+            return Self.operators[w] != nil || w == "divided" || w == "squared" || w == "cubed"
         }
 
         private func peek(_ k: Int = 0) -> String? {
@@ -131,9 +168,17 @@ enum CodeNotation {
             var expectOperand = true
             var previousWasNumber = false
             while i < words.count {
-                let w = words[i]
+                var w = words[i]
                 let lw = w.lowercased()
-                if lw == "log" {
+                // "I mod n": the model capitalizes the variable i.
+                if arithmetic, w == "I", expectOperand, isOperator(peek(1)) { w = "i" }
+                if expectOperand, lw == "negative", let o = operand(peek(1).map { _ in words[i + 1] }) {
+                    out += "-" + o
+                    i += 2
+                    sawMath = true
+                    previousWasNumber = o.first!.isNumber
+                    expectOperand = false
+                } else if !arithmetic, lw == "log" {
                     out += (expectOperand ? "" : " ") + "log "
                     i += 1
                     if peek() == "of" { i += 1 }
@@ -141,13 +186,14 @@ enum CodeNotation {
                     out += o
                     i += 1
                     expectOperand = false; previousWasNumber = false
-                } else if (lw == "square" && peek(1) == "root") || lw == "root" {
+                } else if (lw == "square" && peek(1) == "root") || (!arithmetic && lw == "root") {
                     guard expectOperand else { return }
                     i += lw == "square" ? 2 : 1
                     if peek() == "of" { i += 1 }
                     guard let o = operand(i < words.count ? words[i] : nil) else { return }
                     out += "√" + o
                     i += 1
+                    sawMath = true
                     expectOperand = false; previousWasNumber = false
                 } else if let o = operand(w) {
                     if !expectOperand {
@@ -161,9 +207,11 @@ enum CodeNotation {
                 } else if !expectOperand, lw == "squared" || lw == "cubed" {
                     out += lw == "squared" ? "^2" : "^3"
                     i += 1
+                    sawMath = true
                 } else if !expectOperand, lw == "factorial" {
                     out += "!"
                     i += 1
+                    sawMath = true
                 } else if !expectOperand, lw == "to", peek(1) == "the" {
                     var k = 2
                     if peek(k) == "power", peek(k + 1) == "of" { k += 2 }
@@ -171,21 +219,24 @@ enum CodeNotation {
                     let exponent: String?
                     if let o = Self.ordinals[x] { exponent = o }
                     else if x.count == 3, x.hasSuffix("th"), x.first!.isLetter { exponent = String(words[i + k].prefix(1)) }  // nth, kth
+                    else if x.hasSuffix("th"), x.dropLast(2).allSatisfy(\.isNumber), x.count > 2 { exponent = String(x.dropLast(2)) }  // 10th
                     else { exponent = operand(words[i + k]) }
                     guard let exponent else { return }
                     out += "^" + exponent
                     i += k + 1
+                    sawMath = true
                     if peek() == "power" { i += 1 }
                 } else if !expectOperand, let op = Self.operators[lw] ?? (lw == "divided" && peek(1) == "by" ? "/" : nil) {
                     out += " \(op) "
                     i += lw == "divided" ? 2 : 1
+                    sawMath = true
                     expectOperand = true
                     previousWasNumber = false
                     continue
                 } else {
                     return
                 }
-                if !expectOperand { best = (out, i) }
+                if !expectOperand, sawMath || !arithmetic { best = (out, i) }
             }
         }
     }
