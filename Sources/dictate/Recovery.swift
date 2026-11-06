@@ -62,6 +62,9 @@ enum Recovery {
                 if (try? fm.destinationOfSymbolicLink(atPath: textURL.path)) == nil, fm.fileExists(atPath: textURL.path) {
                     try fm.moveItem(at: textURL, to: take.textURL)
                 }
+                for url in [take.audioURL, take.textURL] where fm.fileExists(atPath: url.path) {
+                    try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+                }
                 log("moved \(audioURL.lastPathComponent) to recordings/\(take.id).wav")
             } catch {
                 log("could not move \(audioURL.lastPathComponent) into recordings: \(error)")

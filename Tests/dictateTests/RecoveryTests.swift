@@ -71,6 +71,8 @@ import Testing
         Recovery.migrate()
         let moved = try #require(Recovery.recent().first)
         #expect(moved.text == "old")
+        let mode = try FileManager.default.attributesOfItem(atPath: moved.audioURL.path)[.posixPermissions] as? Int
+        #expect(mode == 0o600)
         #expect(try Wav.readMono16k(moved.audioURL).count == 500)
         Recovery.migrate()  // nothing left to move
         #expect(Recovery.recent().count == 1)
