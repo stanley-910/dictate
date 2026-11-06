@@ -227,6 +227,8 @@ Logs: `~/.local/state/dictate/dictate.log` when not started from a terminal.
 ## Layout
 
 - `Sources/dictate/` — the app: hotkey tap, mic capture, model wrapper, paste.
+- `Tests/dictateTests/` — `swift test`: tables for the text rules (code
+  notation, emoticon replacements), the speech gate, chunking and loop cuts.
 - `Vendor/TranscribeCpp/` — upstream Swift binding, vendored verbatim (Apache 2.0).
 - `Vendor/TranscribeCpp.xcframework/` — prebuilt native library, not tracked; `scripts/fetch-deps.sh`.
 - `Resources/Info.plist` — bundle metadata and the microphone usage string.

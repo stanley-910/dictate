@@ -1,0 +1,69 @@
+{
+  "replacements": [
+    {
+      "from": "\\b(?:(angry),? )?(?:(winky?|winkie),? )?(smiley?|frowny?|grin|tongue|lick|shock|little p|little o|dee|d|pee|p|oh|o),? face\\b",
+      "regex": true,
+      "to": "⟨$1|$2|$3⟩"
+    },
+    {
+      "from": "\\b(?:(angry),? )?(winky?|winkie),? face\\b",
+      "regex": true,
+      "to": "⟨$1|$2|smile⟩"
+    },
+    {
+      "from": "⟨angry\\|",
+      "regex": true,
+      "to": ">"
+    },
+    {
+      "from": "⟨\\|",
+      "regex": true,
+      "to": ""
+    },
+    {
+      "from": "(?:winky?|winkie)\\|(?=[^⟩]*⟩)",
+      "regex": true,
+      "to": ";"
+    },
+    {
+      "from": "\\|(?=[^⟩]*⟩)",
+      "regex": true,
+      "to": ":"
+    },
+    {
+      "from": "(?:smiley?)⟩",
+      "regex": true,
+      "to": ")"
+    },
+    {
+      "from": "(?:frowny?)⟩",
+      "regex": true,
+      "to": "("
+    },
+    {
+      "from": "(?:little p|lick)⟩",
+      "regex": true,
+      "to": "p"
+    },
+    {
+      "from": "(?:pee|p|tongue)⟩",
+      "regex": true,
+      "to": "P"
+    },
+    {
+      "from": "(?:dee|d|grin)⟩",
+      "regex": true,
+      "to": "D"
+    },
+    {
+      "from": "little o⟩",
+      "regex": true,
+      "to": "o"
+    },
+    {
+      "from": "(?:oh|o|shock)⟩",
+      "regex": true,
+      "to": "O"
+    }
+  ]
+}

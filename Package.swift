@@ -36,5 +36,12 @@ let package = Package(
                 .linkedFramework("Carbon"),
             ]
         ),
+        .testTarget(
+            name: "dictateTests",
+            dependencies: ["dictate"],
+            path: "Tests/dictateTests",
+            resources: [.copy("emoticons.json")],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )
