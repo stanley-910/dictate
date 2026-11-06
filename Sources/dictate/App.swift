@@ -17,6 +17,9 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let dictionaryWindow = DictionaryWindow()
     private var state: State = .idle
     private var maxTimer: Timer?
+    private var warnTimer: Timer?
+    /// Inside `maximumWarnSeconds` of the safety stop.
+    private var nearMaximum = false
     private var reloadTimer: Timer?
     private var configModified: Date?
     /// Index of the hotkey that started the current recording.
@@ -173,10 +176,25 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             log("reached maximumSeconds (\(Int(self.config.maximumSeconds)) s); stopping")
             self.stopAndTranscribe()
         }
+        let warnAt = config.maximumSeconds - config.maximumWarnSeconds
+        if config.maximumWarnSeconds > 0, warnAt > 0 {
+            warnTimer = Timer.scheduledTimer(withTimeInterval: warnAt, repeats: false) { [weak self] _ in
+                guard let self, self.state == .recording else { return }
+                log("\(Int(self.config.maximumWarnSeconds)) s to maximumSeconds")
+                self.nearMaximum = true
+                self.playSound(self.config.soundPack.warn)
+                if !self.cancelArmed {
+                    self.setIcon("●", color: .systemPurple)
+                    self.indicator.mode = .ending
+                }
+            }
+        }
     }
 
     private func stopTimers() {
         maxTimer?.invalidate()
+        warnTimer?.invalidate()
+        nearMaximum = false
     }
 
     /// Short recordings cancel on one Escape; long ones arm on the first press
@@ -200,8 +218,8 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         cancelArmTimer = Timer.scheduledTimer(withTimeInterval: confirmWindow, repeats: false) { [weak self] _ in
             guard let self, self.state == .recording else { return }
             self.cancelArmed = false
-            self.setIcon("●", color: .systemRed)
-            self.indicator.mode = .recording
+            self.setIcon("●", color: self.nearMaximum ? .systemPurple : .systemRed)
+            self.indicator.mode = self.nearMaximum ? .ending : .recording
         }
     }
 

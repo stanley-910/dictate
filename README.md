@@ -118,7 +118,8 @@ security delete-identity -c dictate-dev                                 # if you
 - A piece with no speech in it (silence, room noise, key clicks) is not
   decoded; on those the model makes up "Thank you." and the like.
 - `maximumSeconds` (default 600) stops and transcribes a recording left
-  running.
+  running. `maximumWarnSeconds` (default 30) before that, the `warn` sound
+  plays and the indicator turns purple; 0 turns the warning off.
 - The last `keepRecordings` (default 5) recordings are kept in
   `~/.local/state/dictate/recordings/` as `<time>.wav` with a `.txt` beside
   it, owner-readable only; cancelled ones and one cut short by quitting
@@ -158,7 +159,7 @@ security delete-identity -c dictate-dev                                 # if you
 - The menu bar item has Copy Config Path for opening the file in an editor.
 - `sounds: false` silences everything, as does menu bar > Mute Sounds (stored
   in app defaults); `soundPack` names a sound per event
-  (`start`, `stop`, `cancel`, `arm`), each a name from /System/Library/Sounds
+  (`start`, `stop`, `cancel`, `arm`, `warn`), each a name from /System/Library/Sounds
   or a file path; `null` skips that one.
 - A floating pill above the Dock shows a live waveform while recording
   (`indicator: false` hides it).

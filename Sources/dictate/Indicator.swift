@@ -3,7 +3,7 @@ import AppKit
 /// Floating pill: a status dot and a scrolling waveform of the live input
 /// level. Draggable, on every Space, never takes focus.
 final class Indicator {
-    enum Mode { case recording, armed, transcribing }
+    enum Mode { case recording, armed, ending, transcribing }
 
     private let panel: NSPanel
     private let wave = WaveView()
@@ -150,7 +150,7 @@ final class WaveView: NSView {
 
     func tick() {
         switch mode {
-        case .recording, .armed:
+        case .recording, .armed, .ending:
             // Fast attack, slow release, then scroll.
             let t = WaveView.normalize(target)
             current = t > current ? t : max(t, current * 0.82)
@@ -177,6 +177,7 @@ final class WaveView: NSView {
         switch mode {
         case .recording: dotColor = .systemRed; barColor = .labelColor
         case .armed: dotColor = .systemYellow; barColor = .systemYellow
+        case .ending: dotColor = .systemPurple; barColor = .systemPurple
         case .transcribing: dotColor = .systemOrange; barColor = .labelColor
         }
 

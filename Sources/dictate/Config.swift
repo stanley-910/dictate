@@ -53,6 +53,9 @@ struct Config: Codable {
     /// A safety stop for a recording left running; pieces decode as they
     /// arrive, so length costs little.
     var maximumSeconds: Double = 600
+    /// Seconds before `maximumSeconds` that a sound plays and the indicator
+    /// turns purple, so the stop is not a surprise. 0 = no warning.
+    var maximumWarnSeconds: Double = 30
     /// Recordings kept in ~/.local/state/dictate/recordings, with their text,
     /// to transcribe or copy again from the menu. 0 = keep none.
     var keepRecordings: Int = 5
@@ -84,6 +87,24 @@ struct Config: Codable {
         var stop: String? = "Pop"
         var cancel: String? = "Bottle"
         var arm: String? = "Morse"
+        /// `maximumWarnSeconds` before the safety stop.
+        var warn: String? = "Funk"
+
+        init() {}
+
+        /// Missing names keep their defaults; null silences one.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let d = SoundPack()
+            func name(_ key: CodingKeys, _ fallback: String?) throws -> String? {
+                c.contains(key) ? try c.decode(String?.self, forKey: key) : fallback
+            }
+            start = try name(.start, d.start)
+            stop = try name(.stop, d.stop)
+            cancel = try name(.cancel, d.cancel)
+            arm = try name(.arm, d.arm)
+            warn = try name(.warn, d.warn)
+        }
     }
 
     enum Delivery: String, Codable { case paste, copy, send }
@@ -167,6 +188,7 @@ struct Config: Codable {
         trailingSpace = try c.decodeIfPresent(Bool.self, forKey: .trailingSpace) ?? d.trailingSpace
         minimumSeconds = try c.decodeIfPresent(Double.self, forKey: .minimumSeconds) ?? d.minimumSeconds
         maximumSeconds = try c.decodeIfPresent(Double.self, forKey: .maximumSeconds) ?? d.maximumSeconds
+        maximumWarnSeconds = try c.decodeIfPresent(Double.self, forKey: .maximumWarnSeconds) ?? d.maximumWarnSeconds
         keepRecordings = try c.decodeIfPresent(Int.self, forKey: .keepRecordings) ?? d.keepRecordings
         chunkSeconds = try c.decodeIfPresent(Double.self, forKey: .chunkSeconds) ?? d.chunkSeconds
         maxPauseSeconds = try c.decodeIfPresent(Double.self, forKey: .maxPauseSeconds) ?? d.maxPauseSeconds

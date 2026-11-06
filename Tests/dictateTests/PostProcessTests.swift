@@ -48,3 +48,15 @@ struct PostProcessTests {
         #expect(c.postProcess("Well...") == "Well...")
     }
 }
+
+struct ConfigTests {
+    @Test func soundPackKeepsDefaultsForMissingNames() throws {
+        let json = #"{"soundPack": {"start": "Tink", "stop": null}}"#
+        let c = try JSONDecoder().decode(Config.self, from: Data(json.utf8))
+        #expect(c.soundPack.start == "Tink")
+        #expect(c.soundPack.stop == nil)
+        #expect(c.soundPack.warn == "Funk")
+        #expect(c.maximumWarnSeconds == 30)
+        #expect(c.keepRecordings == 5)
+    }
+}
