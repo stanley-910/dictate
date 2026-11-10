@@ -17,20 +17,14 @@ enum Silence {
 
     /// `pcm` with every quiet run longer than `maxPause` seconds cut down to
     /// `maxPause`, half kept at each end. `maxPause` 0 returns it unchanged.
-    static func squeeze(_ pcm: [Float], maxPause: Double, rate: Int) -> [Float] {
+    /// Quiet is below `threshold`, by default set from the whole clip's room.
+    static func squeeze(_ pcm: [Float], maxPause: Double, rate: Int, threshold: Float? = nil) -> [Float] {
         let frame = max(1, Int(frameSeconds * Double(rate)))
         let frames = pcm.count / frame
-        let maxFrames = Int(maxPause / frameSeconds)
-        guard maxPause > 0, frames > maxFrames else { return pcm }
+        guard let maxFrames = pauseFrames(maxPause), frames > maxFrames else { return pcm }
 
-        var levels = [Float](repeating: 0, count: frames)
-        for f in 0..<frames {
-            var e: Float = 0
-            for v in pcm[(f * frame)..<((f + 1) * frame)] { e += v * v }
-            levels[f] = (e / Float(frame)).squareRoot()
-        }
-        let room = levels.sorted()[Int(Double(frames - 1) * floorPercentile)]
-        let threshold = max(minimumRMS, room * overFloor)
+        let levels = Silence.levels(pcm[...], frame: frame)
+        let threshold = threshold ?? Silence.threshold(levels[...])
 
         let keepHead = maxFrames / 2
         let keepTail = maxFrames - keepHead
@@ -50,6 +44,56 @@ enum Silence {
         }
         out.append(contentsOf: pcm[copied...])
         return out
+    }
+
+    /// The longest quiet run `squeeze` keeps, in frames; nil when it keeps all.
+    static func pauseFrames(_ maxPause: Double) -> Int? {
+        maxPause > 0 ? Int(maxPause / frameSeconds) : nil
+    }
+
+    /// RMS of each whole frame of `pcm`, at most `limit` of them.
+    static func levels(_ pcm: ArraySlice<Float>, frame: Int, limit: Int = .max) -> [Float] {
+        let count = min(limit, pcm.count / frame)
+        return (0..<count).map { f in
+            let at = pcm.startIndex + f * frame
+            return level(pcm[at..<(at + frame)])
+        }
+    }
+
+    static func level(_ frame: ArraySlice<Float>) -> Float {
+        var e: Float = 0
+        for v in frame { e += v * v }
+        return (e / Float(max(1, frame.count))).squareRoot()
+    }
+
+    /// Frames at or below this are quiet: twice the room, the quietest tenth.
+    static func threshold(_ levels: ArraySlice<Float>) -> Float {
+        guard !levels.isEmpty else { return minimumRMS }
+        let room = levels.sorted()[Int(Double(levels.count - 1) * floorPercentile)]
+        return max(minimumRMS, room * overFloor)
+    }
+
+    /// How many frames `squeeze` keeps of audio heard so far, one frame at a
+    /// time. A quiet run still open counts as `squeeze` would count it if
+    /// the audio ended there, so the count never depends on what comes next.
+    struct Kept {
+        let threshold: Float
+        let maxRun: Int?
+        private var settled = 0
+        private var run = 0
+
+        init(threshold: Float, maxPause: Double) {
+            self.threshold = threshold
+            self.maxRun = Silence.pauseFrames(maxPause)
+        }
+
+        var frames: Int { settled + min(run, maxRun ?? run) }
+
+        mutating func add(_ level: Float) {
+            if level <= threshold { run += 1; return }
+            settled = frames + 1
+            run = 0
+        }
     }
 
     /// Less speech than this and a piece is not decoded: on room noise or

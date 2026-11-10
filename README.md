@@ -110,6 +110,10 @@ security delete-identity -c dictate-dev                                 # if you
 - Long recordings are transcribed in pieces of at most `chunkSeconds`
   (default 30), cut at the quietest moment near the end of each piece. The
   model drifts and repeats itself on a single pass much past half a minute.
+  The limit counts the audio after long pauses are shortened (see
+  `maxPauseSeconds`), so a piece with long pauses in it covers more of the
+  recording and there are fewer cuts: the model tends to end a sentence at
+  each one.
   Pieces are decoded while you are still talking, so stopping leaves only the
   last one: the wait after stop stays about a second however long you talk.
   Set 0 to disable. A piece the model loops on (one phrase over and over
@@ -125,7 +129,8 @@ security delete-identity -c dictate-dev                                 # if you
   it, owner-readable only; cancelled ones and one cut short by quitting
   included. `last.wav` and `last.txt` link to the newest. While recording,
   the audio and text so far are saved after each piece decodes, so a crash
-  or forced quit keeps all but the last half minute; the next launch logs it.
+  or forced quit keeps all but the last piece (about half a minute of
+  speech); the next launch logs it.
   Menu bar > Copy Last Transcript copies the text again; Transcribe Last
   Recording decodes the audio again and copies the result; Recent Recordings
   copies an older one's text (hold Option to decode it again). 0 keeps none.

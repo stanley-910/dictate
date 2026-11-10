@@ -59,9 +59,10 @@ struct Config: Codable {
     /// Recordings kept in ~/.local/state/dictate/recordings, with their text,
     /// to transcribe or copy again from the menu. 0 = keep none.
     var keepRecordings: Int = 5
-    /// Recordings are transcribed in pieces no longer than this (seconds), cut
-    /// at the quietest moment in the last part of each piece. The model drifts
-    /// and repeats itself on longer single passes. 0 = never split.
+    /// Recordings are transcribed in pieces no longer than this (seconds, after
+    /// `maxPauseSeconds` shortens pauses), cut at the quietest moment in the
+    /// last part of each piece. The model drifts and repeats itself on longer
+    /// single passes. 0 = never split.
     var chunkSeconds: Double = 30
     /// Quiet stretches longer than this (seconds) are shortened to it before
     /// decoding; the model spends as long on silence as on speech. 0 = keep all.

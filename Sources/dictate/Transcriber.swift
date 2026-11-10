@@ -59,9 +59,9 @@ final class Transcriber {
             // roughly half a minute (skips ahead, then loops the last sentence),
             // and the library does no long-form chunking for it. Cut at quiet
             // points and stitch the pieces.
-            let chunks = Chunker.split(pcm, maxSeconds: self.config.chunkSeconds, rate: Int(Recorder.targetRate))
-            var pieces = Pieces()
-            for chunk in chunks { pieces.take(chunk, with: self) }
+            let chunker = Chunker(config: self.config)
+            var pieces = Pieces(chunker: chunker)
+            for chunk in chunker.split(pcm) { pieces.take(chunk, with: self) }
             let ms = Int(Date().timeIntervalSince(t0) * 1000)
             log("transcribed \(seconds(pcm.count)) s of audio (\(seconds(pieces.fed)) s after pauses) in \(ms) ms (\(pieces.summary))")
             self.scheduleUnload()
@@ -73,17 +73,17 @@ final class Transcriber {
     /// `recorded(from:)` returns the audio from a sample index on, so far.
     /// `progress` gets the text so far after each piece, on the transcriber's queue.
     func begin(recorded: @escaping (Int) -> [Float], progress: @escaping (String) -> Void = { _ in }) -> LiveTranscript {
-        LiveTranscript(transcriber: self, maxSeconds: config.chunkSeconds, recorded: recorded, progress: progress)
+        LiveTranscript(transcriber: self, chunker: Chunker(config: config), recorded: recorded, progress: progress)
     }
 
     /// One piece, long pauses shortened; also how many samples the model got.
     /// On `queue` only.
-    fileprivate func decode(_ chunk: [Float]) throws -> (text: String, samples: Int) {
+    fileprivate func decode(_ chunk: [Float], chunker: Chunker) throws -> (text: String, samples: Int) {
         try load()
         guard let session else { throw DictateError.notLoaded }
         var options = RunOptions()
         options.language = config.language
-        let audio = Silence.squeeze(chunk, maxPause: config.maxPauseSeconds, rate: Int(Recorder.targetRate))
+        let audio = chunker.squeeze(chunk)
         return (try run(audio, session: session, options: options, halvings: 2), audio.count)
     }
 
@@ -127,11 +127,14 @@ final class Transcriber {
 /// bad stretch never costs everything around it. On the transcriber's queue.
 private struct Pieces {
     static let gap = "[…]"
+    let chunker: Chunker
     private var parts: [String] = []
     private(set) var count = 0
     private(set) var fed = 0
     private var skipped = 0
     private var lastError: Error?
+
+    init(chunker: Chunker) { self.chunker = chunker }
 
     mutating func take(_ chunk: [Float], with transcriber: Transcriber) {
         count += 1
@@ -140,7 +143,7 @@ private struct Pieces {
             return
         }
         do {
-            let piece = try transcriber.decode(chunk)
+            let piece = try transcriber.decode(chunk, chunker: chunker)
             if !piece.text.isEmpty { parts.append(piece.text) }
             fed += piece.samples
         } catch {
@@ -203,27 +206,30 @@ enum Loop {
 }
 
 /// A recording transcribed while it is still being made. Once more than
-/// `chunkSeconds` has arrived past the last cut, the next piece is cut and
-/// decoded, the same cuts `Chunker.split` makes on the whole clip, so the text
-/// matches. Stopping leaves only the last piece to decode, so the wait after
+/// `chunkSeconds` (after pauses are shortened) has arrived past the last cut,
+/// the next piece is cut and decoded, the same cuts `Chunker.split` makes on
+/// the whole clip, so the text matches. Stopping leaves only the last piece to decode, so the wait after
 /// stop no longer grows with the length of the recording.
 final class LiveTranscript {
     /// How often it checks for a full piece; a piece decodes in about 1 s.
     static let pollSeconds = 1.0
 
     private let transcriber: Transcriber
-    private let maxSeconds: Double
+    private let chunker: Chunker
     private let recorded: (Int) -> [Float]
     private let progress: (String) -> Void
     private let timer: DispatchSourceTimer
     // Touched only on the transcriber's queue.
     private var decoded = 0
-    private var pieces = Pieces()
+    private var pieces: Pieces
 
-    fileprivate init(transcriber: Transcriber, maxSeconds: Double, recorded: @escaping (Int) -> [Float],
+    /// `chunker` is fixed at the start: a config reload mid-recording must
+    /// not move cuts already made.
+    fileprivate init(transcriber: Transcriber, chunker: Chunker, recorded: @escaping (Int) -> [Float],
                      progress: @escaping (String) -> Void) {
         self.transcriber = transcriber
-        self.maxSeconds = maxSeconds
+        self.chunker = chunker
+        self.pieces = Pieces(chunker: chunker)
         self.recorded = recorded
         self.progress = progress
         // On the model's queue: polls wait behind a decode instead of piling up.
@@ -246,7 +252,7 @@ final class LiveTranscript {
             let t0 = Date()
             let early = self.pieces.count
             let tail = self.decoded < pcm.count ? Array(pcm[self.decoded...]) : []
-            for chunk in Chunker.split(tail, maxSeconds: self.maxSeconds, rate: Int(Recorder.targetRate)) where !chunk.isEmpty {
+            for chunk in self.chunker.split(tail) where !chunk.isEmpty {
                 self.pieces.take(chunk, with: self.transcriber)
             }
             let ms = Int(Date().timeIntervalSince(t0) * 1000)
@@ -259,7 +265,7 @@ final class LiveTranscript {
     private func advance() {
         let pending = recorded(decoded)
         var start = 0
-        while let cut = Chunker.firstCut(pending[start...], maxSeconds: maxSeconds, rate: Int(Recorder.targetRate)) {
+        while let cut = chunker.firstCut(pending[start...]) {
             pieces.take(Array(pending[start..<cut]), with: transcriber)
             decoded += cut - start
             start = cut
