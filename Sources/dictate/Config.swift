@@ -11,6 +11,9 @@ struct Config: Codable {
     var mode: Mode = .toggle
     /// Optional second hotkey that always records while held (push-to-talk).
     var holdHotkey: String? = nil
+    /// The toggle hotkey held at least this long (seconds) stops on release,
+    /// push-to-talk; a shorter tap toggles. 0 = always toggle.
+    var holdToTalkAfterSeconds: Double = 0.4
     /// Path to the GGUF. "~" is expanded.
     var model: String = "~/.local/share/dictate/models/cohere-transcribe-03-2026-Q8_0.gguf"
     /// BCP-47 language hint passed to the model; nil = auto.
@@ -174,6 +177,7 @@ struct Config: Codable {
         hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey) ?? d.hotkey
         mode = try c.decodeIfPresent(Mode.self, forKey: .mode) ?? d.mode
         holdHotkey = try c.decodeIfPresent(String.self, forKey: .holdHotkey)
+        holdToTalkAfterSeconds = try c.decodeIfPresent(Double.self, forKey: .holdToTalkAfterSeconds) ?? d.holdToTalkAfterSeconds
         model = try c.decodeIfPresent(String.self, forKey: .model) ?? d.model
         language = c.contains(.language) ? try c.decode(String?.self, forKey: .language) : d.language
         unloadAfterSeconds = try c.decodeIfPresent(Double.self, forKey: .unloadAfterSeconds) ?? d.unloadAfterSeconds

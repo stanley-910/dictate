@@ -83,6 +83,10 @@ struct TriggerTests {
         T.State(recording: true, ownsRecording: owns, heldSeconds: held)
     }
     static func up(held: Double) -> T.State { T.State(heldSeconds: held) }
+    static let tapOrHold = T.Key(mode: .toggle, holdAfterSeconds: 0.4)
+    static func pressed(held: Double, started: Bool = true) -> T.State {
+        T.State(recording: true, ownsRecording: true, heldSeconds: held, pressStarted: started)
+    }
 
     @Test(arguments: [
         // A key with a key code: press starts, the same key's next press stops.
@@ -108,6 +112,18 @@ struct TriggerTests {
         (.chord, loneHold, rec(held: 3), .none),
         (.chord, loneHold, rec(owns: false, held: 0.2), .none),
         (.release(clean: false), loneHold, rec(held: 3), .stop),
+        // Tap or hold on the toggle key: a tap leaves it recording, a hold
+        // past the threshold stops on release.
+        (.press, tapOrHold, idle, .start),
+        (.release(clean: true), tapOrHold, pressed(held: 0.15), .none),
+        (.release(clean: true), tapOrHold, pressed(held: 0.4), .stop),
+        (.release(clean: true), tapOrHold, pressed(held: 5), .stop),
+        // The release after a press that stopped (or a lone tap that started) is idle.
+        (.release(clean: true), tapOrHold, pressed(held: 5, started: false), .none),
+        (.release(clean: true), tapOrHold, up(held: 5), .none),
+        (.press, tapOrHold, pressed(held: 0, started: true), .stop),
+        // 0 turns it off.
+        (.release(clean: true), toggle, pressed(held: 5), .none),
     ])
     func decides(_ event: T.Event, _ key: T.Key, _ state: T.State, _ expected: T.Action) {
         #expect(T.action(event, key: key, state: state) == expected)

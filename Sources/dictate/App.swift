@@ -40,6 +40,9 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var hotkeys: [Hotkey] = []
     /// When each hotkey last went down, by index.
     private var pressedAt: [Int: Date] = [:]
+    /// The recording was started by a press (not a lone key's release), so
+    /// holding that press past `holdToTalkAfterSeconds` makes it push-to-talk.
+    private var pressStarted = false
     /// `config.deliveryModifierFlags`, kept apart for the tap's thread.
     private var deliveryFlags: CGEventFlags = []
 
@@ -163,12 +166,15 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// press starts it whatever is in flight.
     private func act(_ event: Trigger.Event, key i: Int) {
         guard i < hotkeys.count else { return }
-        let key = Trigger.Key(mode: i == 0 ? config.mode : .hold, lone: hotkeys[i].loneModifierKeyCode != nil)
+        let key = Trigger.Key(mode: i == 0 ? config.mode : .hold, lone: hotkeys[i].loneModifierKeyCode != nil,
+                              holdAfterSeconds: config.holdToTalkAfterSeconds)
         let held = pressedAt[i].map { Date().timeIntervalSince($0) } ?? 0
-        let now = Trigger.State(recording: recording, ownsRecording: activeHotkey == i, heldSeconds: held)
+        let now = Trigger.State(recording: recording, ownsRecording: activeHotkey == i, heldSeconds: held,
+                                pressStarted: pressStarted)
         switch Trigger.action(event, key: key, state: now) {
         case .start:
             activeHotkey = i
+            pressStarted = event == .press
             startRecording()
         case .stop:
             stopAndTranscribe()

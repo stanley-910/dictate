@@ -106,6 +106,9 @@ security delete-identity -c dictate-dev                                 # if you
 - Same hotkey stops, transcribes, and pastes. The next recording can start
   while the last is still decoding; transcripts land in the order their
   recordings stopped, pasted wherever the cursor is then, even mid-recording.
+- Or hold the hotkey to talk: held past `holdToTalkAfterSeconds` (default
+  0.4), letting go stops. A quicker tap toggles as above; 0 turns holding off.
+  A lone-modifier toggle key (below) only taps.
 - Escape while recording cancels and never reaches the frontmost app. Past
   `cancelConfirmAfterSeconds` (default 10) the first Escape only arms (dot
   turns yellow); a second within 2 s cancels. Set 0 for single-press.

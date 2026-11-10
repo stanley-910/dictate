@@ -38,6 +38,9 @@ enum Trigger {
         var mode: Config.Mode
         /// A single modifier key such as "fn" or "right_command".
         var lone = false
+        /// A toggle key held at least this long before its release stops
+        /// the recording its press started (push-to-talk); 0 = toggle only.
+        var holdAfterSeconds: Double = 0
     }
 
     struct State: Equatable {
@@ -46,6 +49,9 @@ enum Trigger {
         var ownsRecording = false
         /// Seconds since this key went down (for a release or a chord).
         var heldSeconds: Double = 0
+        /// This key's latest press started the recording (not a release, and
+        /// not an earlier press: the release after a stopping press is idle).
+        var pressStarted = false
     }
 
     /// A lone-modifier toggle key acts on a release this soon after its
@@ -70,7 +76,9 @@ enum Trigger {
             if !s.recording { return .start }
             return s.ownsRecording ? .stop : .none
         case (.release, .toggle):
-            return .none
+            // Tapped: recording goes on until the next press. Held: let go to stop.
+            let held = key.holdAfterSeconds > 0 && s.heldSeconds >= key.holdAfterSeconds
+            return held && s.recording && s.ownsRecording && s.pressStarted ? .stop : .none
         case (.release, .hold):
             return s.recording && s.ownsRecording ? .stop : .none
         case (.chord, .hold):
