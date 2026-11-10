@@ -3,7 +3,8 @@ import AppKit
 /// Floating pill: a status dot and a scrolling waveform of the live input
 /// level. Draggable, on every Space, never takes focus.
 final class Indicator {
-    enum Mode { case recording, armed, ending, transcribing }
+    /// `nothing`: the recording held no speech, shown briefly before hiding.
+    enum Mode { case recording, armed, ending, transcribing, nothing }
 
     private let panel: NSPanel
     private let wave = WaveView()
@@ -159,6 +160,9 @@ final class WaveView: NSView {
         case .transcribing:
             phase += 0.045
             if phase > 1.6 { phase = -0.6 }
+        case .nothing:
+            // Flatten what was drawn.
+            history = history.map { $0 * 0.8 }
         }
         needsDisplay = true
     }
@@ -179,6 +183,7 @@ final class WaveView: NSView {
         case .armed: dotColor = .systemYellow; barColor = .systemYellow
         case .ending: dotColor = .systemPurple; barColor = .systemPurple
         case .transcribing: dotColor = .systemOrange; barColor = .labelColor
+        case .nothing: dotColor = .systemGray; barColor = .systemGray
         }
 
         let dotR: CGFloat = 4.5

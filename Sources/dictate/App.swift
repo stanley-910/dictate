@@ -44,6 +44,8 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The recording was started by a press (not a lone key's release), so
     /// holding that press past `holdToTalkAfterSeconds` makes it push-to-talk.
     private var pressStarted = false
+    /// The last delivery found no speech: the pill shows it before hiding.
+    private var heardNothing = false
     /// `config.deliveryModifierFlags`, kept apart for the tap's thread.
     private var deliveryFlags: CGEventFlags = []
 
@@ -297,7 +299,12 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let ticket = deliveries.add(.dictation(stopFlags: stopFlags, target: target))
         showState()
         playSound(config.soundPack.stop)
+        let input = dictation.inputName
         dictation.text(from: pcm, recording: true) { [weak self] result in
+            // Off main, and only when needed: a long recording takes a moment.
+            if case .success(let text) = result, text.isEmpty {
+                log("no speech in \(String(format: "%.1f", seconds)) s from \(input); \(Dictation.levels(pcm))")
+            }
             DispatchQueue.main.async { self?.finished(ticket, result) }
         }
     }
@@ -313,7 +320,13 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             indicator.mode = .transcribing
         case .idle:
             setIcon("○")
-            indicator.hide()
+            guard heardNothing else { return indicator.hide() }
+            heardNothing = false
+            indicator.mode = .nothing
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                guard let self, self.state == .idle else { return }
+                self.indicator.hide()
+            }
         }
     }
 
@@ -323,9 +336,16 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func deliver(_ job: Job, _ result: Result<String, Error>) {
+        heardNothing = false
         switch (job, result) {
         case (.dictation(let stopFlags, let target), .success(var text)):
-            if text.isEmpty { return }
+            if text.isEmpty {
+                // Silence, or speech too quiet for the gate: say so rather
+                // than leave the user waiting for text that is not coming.
+                playSound(config.soundPack.nothing)
+                heardNothing = !recording
+                return
+            }
             // While the next recording runs, the modifiers held are its own
             // (a hold key, a delivery pick for it): only the stop's count.
             let held = recording ? stopFlags
@@ -357,6 +377,11 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 log("sent")
             }
         case (.saved(let take), .success(let text)):
+            if text.isEmpty {
+                playSound(config.soundPack.nothing)
+                log("no speech in recording \(take.id)")
+                return
+            }
             take.saveText(text)
             Paster.copy(text)
             playSound(config.soundPack.stop)

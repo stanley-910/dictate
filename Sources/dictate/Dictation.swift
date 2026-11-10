@@ -11,6 +11,8 @@ final class Dictation {
     private var live: LiveTranscript?
     /// Its files; nil when `keepRecordings` is 0.
     private var take: Recovery.Take?
+    /// The input the latest recording used, for the log.
+    private(set) var inputName = "default input"
 
     /// Read at each use; a new model path drops the loaded one.
     var config: Config {
@@ -32,7 +34,9 @@ final class Dictation {
     /// after each piece, so a crash or a forced quit keeps nearly all of it.
     func start() throws {
         live = nil
-        try recorder.start(device: AudioDevices.resolve(configured: config.microphone))
+        let device = AudioDevices.resolve(configured: config.microphone)
+        inputName = device?.name ?? "default input"
+        try recorder.start(device: device)
         transcriber.preload()
         let take = config.keepRecordings > 0 ? Recovery.Take.new() : nil
         // `dictate listen` too, not only the app's launch: the old last.wav is moved, never overwritten.
@@ -99,6 +103,26 @@ final class Dictation {
         } else {
             transcriber.transcribe(pcm, completion: done)
         }
+    }
+
+    /// Loudness of a recording, for the log when no speech was found in it:
+    /// whether it was silence, a dead input or speech too quiet for the gate.
+    static func levels(_ pcm: [Float]) -> String {
+        let block = Int(Recorder.targetRate / 10)
+        var levels: [Float] = []
+        var i = 0
+        while i + block <= pcm.count {
+            var e: Float = 0
+            for v in pcm[i..<(i + block)] { e += v * v }
+            levels.append((e / Float(block)).squareRoot())
+            i += block
+        }
+        guard !levels.isEmpty else { return "no audio" }
+        let dead = levels.filter { $0 <= EndOfSpeech.deadRMS }.count
+        let sorted = levels.sorted()
+        func at(_ q: Double) -> String { String(format: "%.4f", sorted[Int(Double(sorted.count - 1) * q)]) }
+        return "100 ms levels: loudest \(at(1)), 90th pct \(at(0.9)), median \(at(0.5)), 10th pct \(at(0.1)); "
+            + "\(dead * 100 / levels.count)% dead"
     }
 
     /// Before exit: ggml's Metal teardown asserts if a model outlives exit().

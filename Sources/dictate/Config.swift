@@ -102,6 +102,8 @@ struct Config: Codable {
         var warn: String? = "Funk"
         /// The transcript was copied, not pasted: another app is frontmost now.
         var copied: String? = "Glass"
+        /// The recording held no speech, so nothing was pasted.
+        var nothing: String? = "Submarine"
 
         init() {}
 
@@ -118,6 +120,7 @@ struct Config: Codable {
             arm = try name(.arm, d.arm)
             warn = try name(.warn, d.warn)
             copied = try name(.copied, d.copied)
+            nothing = try name(.nothing, d.nothing)
         }
     }
 

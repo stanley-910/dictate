@@ -125,7 +125,10 @@ security delete-identity -c dictate-dev                                 # if you
   until its token cap) is decoded again in halves; a piece that still fails
   shows as `[…]` and the rest of the recording is kept.
 - A piece with no speech in it (silence, room noise, key clicks) is not
-  decoded; on those the model makes up "Thank you." and the like.
+  decoded; on those the model makes up "Thank you." and the like. When a
+  whole recording has none, nothing is pasted: the `nothing` sound plays,
+  the pill's dot turns grey for a moment, and the log gets a line with the
+  recording's loudness and input, to tell a dead mic from quiet speech.
 - `maximumSeconds` (default 600) stops and transcribes a recording left
   running. `maximumWarnSeconds` (default 30) before that, the `warn` sound
   plays and the indicator turns purple; 0 turns the warning off.
@@ -192,7 +195,7 @@ security delete-identity -c dictate-dev                                 # if you
 - The menu bar item has Copy Config Path for opening the file in an editor.
 - `sounds: false` silences everything, as does menu bar > Mute Sounds (stored
   in app defaults); `soundPack` names a sound per event
-  (`start`, `stop`, `cancel`, `arm`, `warn`, `copied`), each a name from /System/Library/Sounds
+  (`start`, `stop`, `cancel`, `arm`, `warn`, `copied`, `nothing`), each a name from /System/Library/Sounds
   or a file path; `null` skips that one.
 - A floating pill above the Dock shows a live waveform while recording
   (`indicator: false` hides it).

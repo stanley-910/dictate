@@ -193,3 +193,18 @@ struct CursorTextTests {
         #expect(CursorText.fit("Then left.", after: "we saw it", isWord: words.contains) == " then left.")
     }
 }
+
+struct NoSpeechTests {
+    @Test func levelsTellADeadInputFromQuietSpeech() {
+        #expect(Dictation.levels([Float](repeating: 0, count: 16_000)).hasSuffix("100% dead"))
+        let quiet = AudioTests.tone(1, amplitude: 0.01)
+        #expect(Dictation.levels(quiet).hasSuffix("0% dead"))
+        #expect(Dictation.levels([]) == "no audio")
+    }
+
+    @Test func soundsDefaultWhenTheConfigNamesOthers() throws {
+        let c = try JSONDecoder().decode(Config.self, from: Data(#"{"soundPack": {"start": "Tink"}}"#.utf8))
+        #expect(c.soundPack.nothing == "Submarine")
+        #expect(c.soundPack.copied == "Glass")
+    }
+}
