@@ -36,7 +36,10 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var configModified: Date?
     /// Index of the hotkey that started the current recording.
     private var activeHotkey = 0
-    private var pressedAt: Date?
+    /// The bound hotkeys, as the listener has them.
+    private var hotkeys: [Hotkey] = []
+    /// When each hotkey last went down, by index.
+    private var pressedAt: [Int: Date] = [:]
     /// `config.deliveryModifierFlags`, kept apart for the tap's thread.
     private var deliveryFlags: CGEventFlags = []
 
@@ -102,6 +105,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// first-run flow is: launch, approve the prompt, start dictating.
     private func startListening() {
         guard let hotkeys = parsedHotkeys() else { return }
+        self.hotkeys = hotkeys
         let l = HotkeyListener(hotkeys: hotkeys) { [weak self] event in
             DispatchQueue.main.async { self?.handle(event) }
         }
@@ -146,18 +150,32 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .escape:
             if recording { escapePressed() }
         case .pressed(let i):
-            let mode: Config.Mode = i == 0 ? config.mode : .hold
-            // Earlier recordings still decoding do not hold up the next one.
-            if !recording {
-                pressedAt = Date()
-                activeHotkey = i
-                startRecording()
-            } else if mode == .toggle, activeHotkey == i {
-                stopAndTranscribe()
-            }
-        case .released(let i):
-            let mode: Config.Mode = i == 0 ? config.mode : .hold
-            if mode == .hold, recording, activeHotkey == i { stopAndTranscribe() }
+            pressedAt[i] = Date()
+            act(.press, key: i)
+        case .released(let i, let clean):
+            act(.release(clean: clean), key: i)
+        case .chorded(let i):
+            act(.chord, key: i)
+        }
+    }
+
+    /// Earlier recordings still decoding do not hold up the next one: a
+    /// press starts it whatever is in flight.
+    private func act(_ event: Trigger.Event, key i: Int) {
+        guard i < hotkeys.count else { return }
+        let key = Trigger.Key(mode: i == 0 ? config.mode : .hold, lone: hotkeys[i].loneModifierKeyCode != nil)
+        let held = pressedAt[i].map { Date().timeIntervalSince($0) } ?? 0
+        let now = Trigger.State(recording: recording, ownsRecording: activeHotkey == i, heldSeconds: held)
+        switch Trigger.action(event, key: key, state: now) {
+        case .start:
+            activeHotkey = i
+            startRecording()
+        case .stop:
+            stopAndTranscribe()
+        case .discard:
+            discard()
+        case .none:
+            break
         }
     }
 
@@ -244,6 +262,17 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         showState()
         playSound(config.soundPack.cancel)
         log("cancelled")
+    }
+
+    /// A hold key that turned out to be part of a shortcut (Right-Command+C):
+    /// gone without a sound or a saved recording.
+    private func discard() {
+        disarmCancel()
+        stopTimers()
+        _ = dictation.stop(discard: true)
+        recording = false
+        showState()
+        log("discarded: the hotkey was part of a shortcut")
     }
 
     private func stopAndTranscribe() {

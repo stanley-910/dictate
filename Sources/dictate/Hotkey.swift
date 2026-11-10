@@ -66,8 +66,10 @@ struct Hotkey {
 /// Requires Accessibility (an active tap can swallow the event so the
 /// hotkey does not also reach the frontmost app).
 final class HotkeyListener {
-    /// `pressed`/`released` carry the index into the hotkeys array.
-    enum Event { case pressed(Int), released(Int), escape }
+    /// Each carries the index into the hotkeys array. `released` is clean
+    /// when nothing else was pressed meanwhile (always, for a key with a key
+    /// code); `chorded` is a lone modifier's first other key or click.
+    enum Event: Equatable { case pressed(Int), released(Int, clean: Bool), chorded(Int), escape }
 
     private let hotkeys: [Hotkey]
     private let handler: (Event) -> Void
@@ -85,13 +87,13 @@ final class HotkeyListener {
     /// Modifier flags on the last key event the tap saw, i.e. what apps see
     /// after Karabiner and friends have remapped.
     private(set) var lastFlags: CGEventFlags = []
-    private var loneModifierDown: [Bool]
+    private var lone: [LoneModifier]
     private var keyDown: [Bool]
 
     init(hotkeys: [Hotkey], handler: @escaping (Event) -> Void) {
         self.hotkeys = hotkeys
         self.handler = handler
-        loneModifierDown = Array(repeating: false, count: hotkeys.count)
+        lone = Array(repeating: LoneModifier(), count: hotkeys.count)
         keyDown = Array(repeating: false, count: hotkeys.count)
     }
 
@@ -107,9 +109,13 @@ final class HotkeyListener {
     }
 
     func start() throws {
-        let mask: CGEventMask =
+        var mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
             | (1 << CGEventType.flagsChanged.rawValue)
+        // Clicks only matter while a lone modifier is held (Command-click).
+        if hotkeys.contains(where: { $0.loneModifierKeyCode != nil }) {
+            for type in [CGEventType.leftMouseDown, .rightMouseDown, .otherMouseDown] { mask |= 1 << type.rawValue }
+        }
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
@@ -151,8 +157,13 @@ final class HotkeyListener {
         if event.getIntegerValueField(.eventSourceUserData) == Paster.eventMarker {
             return Unmanaged.passUnretained(event)
         }
+        if type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown {
+            chord()
+            return Unmanaged.passUnretained(event)
+        }
         let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
         lastFlags = event.flags
+        if type == .keyDown { chord() }
 
         if code == CGKeyCode(kVK_Escape), type == .keyDown || type == .keyUp {
             guard capturesEscape() else { return Unmanaged.passUnretained(event) }
@@ -165,10 +176,10 @@ final class HotkeyListener {
         for (i, hotkey) in hotkeys.enumerated() {
             if let lone = hotkey.loneModifierKeyCode {
                 guard type == .flagsChanged, code == lone else { continue }
-                let down = isModifierDown(code: lone, flags: event.flags)
-                if down != loneModifierDown[i] {
-                    loneModifierDown[i] = down
-                    handler(down ? .pressed(i) : .released(i))
+                switch self.lone[i].modifier(isDown: isModifierDown(code: lone, flags: event.flags)) {
+                case .pressed: handler(.pressed(i))
+                case .released(let clean): handler(.released(i, clean: clean))
+                case .chorded, nil: break
                 }
                 return Unmanaged.passUnretained(event)
             }
@@ -184,13 +195,18 @@ final class HotkeyListener {
                 return nil
             case .keyUp:
                 keyDown[i] = false
-                handler(.released(i))
+                handler(.released(i, clean: true))
                 return nil
             default:
                 return Unmanaged.passUnretained(event)
             }
         }
         return Unmanaged.passUnretained(event)
+    }
+
+    /// Another key or a click: a lone modifier held now is part of a shortcut.
+    private func chord() {
+        for i in lone.indices where lone[i].otherInput() != nil { handler(.chorded(i)) }
     }
 
     private func isModifierDown(code: CGKeyCode, flags: CGEventFlags) -> Bool {

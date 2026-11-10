@@ -57,15 +57,15 @@ final class Dictation {
     /// Releases the mic and the speaker mute; returns the audio and how long it
     /// ran. The audio is saved first (`Recovery`), cancelled recordings too, so
     /// whatever happens next it can be transcribed again. `wait` holds until
-    /// it is on disk, for quitting.
-    func stop(wait: Bool = false) -> (pcm: [Float], seconds: TimeInterval) {
+    /// it is on disk, for quitting. A `discard`ed recording is not kept.
+    func stop(wait: Bool = false, discard: Bool = false) -> (pcm: [Float], seconds: TimeInterval) {
         let seconds = recorder.duration
         let wasRecording = recorder.isRecording
         live?.stop()
         let pcm = recorder.stop()
         mute.release()
         if wasRecording, let take {
-            if seconds >= config.minimumSeconds { take.saveAudio(pcm, done: true, wait: wait) } else { take.delete(wait: wait) }
+            if seconds >= config.minimumSeconds, !discard { take.saveAudio(pcm, done: true, wait: wait) } else { take.delete(wait: wait) }
         }
         return (pcm, seconds)
     }

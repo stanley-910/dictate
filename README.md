@@ -142,6 +142,13 @@ security delete-identity -c dictate-dev                                 # if you
 - `mode: "hold"` records only while the key is held. `holdHotkey` adds a
   second key that is always push-to-talk, e.g. `"right_command"` or `"fn"`,
   alongside the toggle key.
+- A single modifier as the hotkey (`"fn"`, `"right_command"`) counts only
+  when pressed on its own, so Right-Command+C still copies. As a toggle key
+  it acts on release, after a quick tap (under 0.5 s) with no other key or
+  click in between. As a hold key it starts recording on press, so nothing is
+  lost waiting; if another key or a click follows within 1 s, it was a
+  shortcut and that recording is dropped without a sound or a saved copy.
+  After 1 s of holding, a stray key is ignored and the recording goes on.
 - `modifiers` maps a modifier held while the transcript is delivered to an
   action: `paste`, `copy` (clipboard only) or `send` (paste, then Return).
   Default `{"shift": "copy", "option": "send"}`; `command` is also accepted.
