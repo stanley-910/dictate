@@ -3,7 +3,7 @@ import Foundation
 
 /// The spoken "paste" command and the clipboard history it pastes from.
 /// macOS keeps no history anyone can read, so the daemon keeps its own from
-/// launch: the last `limit` plain-text copies, in memory only. Items a
+/// launch: the last `limit` copies (text, images, files), in memory only. Items a
 /// password manager marks concealed or transient are skipped, and so are
 /// dictate's own writes (the transcript it pastes, the clipboard it puts
 /// back). Logs give counts, never contents.
@@ -20,8 +20,21 @@ final class ClipboardHistory {
     /// oldest of as many recent copies as there are commands.
     enum Order: String, Codable { case recent, oldest }
 
+    /// One copy: plain text, or everything on the pasteboard for an image
+    /// or a file, put back as it was to be pasted.
+    enum Item: Equatable {
+        case text(String)
+        case rich(PasteSnapshot)
+    }
+
+    /// Copies bigger than this are not kept (a 5K screenshot is about 30 MB).
+    static let maxBytes = 64 << 20
+    private static let richTypes: Set<NSPasteboard.PasteboardType> = [
+        .png, .tiff, .fileURL, .init("public.jpeg"), .init("public.heic"), .init("com.compuserve.gif"), .pdf,
+    ]
+
     /// Newest first.
-    private(set) var items: [String] = []
+    private(set) var items: [Item] = []
     private var seen = NSPasteboard.general.changeCount
     private var timer: Timer?
 
@@ -42,9 +55,20 @@ final class ClipboardHistory {
         guard timer != nil, pb.changeCount != seen else { return }
         seen = pb.changeCount
         let types = Set(pb.types ?? [])
-        guard types.isDisjoint(with: Self.skipped), let text = pb.string(forType: .string), !text.isEmpty,
-              items.first != text else { return }
-        items.insert(text, at: 0)
+        guard types.isDisjoint(with: Self.skipped) else { return }
+        let item: Item
+        if !types.isDisjoint(with: Self.richTypes) {
+            let snap = Paster.snapshot(pb)
+            let bytes = snap.reduce(0) { $0 + $1.values.reduce(0) { $0 + $1.count } }
+            guard bytes > 0, bytes <= Self.maxBytes else { return }
+            item = .rich(snap)
+        } else if let text = pb.string(forType: .string), !text.isEmpty {
+            item = .text(text)
+        } else {
+            return
+        }
+        guard items.first != item else { return }
+        items.insert(item, at: 0)
         if items.count > Self.limit { items.removeLast() }
     }
 
@@ -57,27 +81,51 @@ final class ClipboardHistory {
         if pb == NSPasteboard.general { shared.seen = pb.changeCount }
     }
 
+    /// What to paste, in order: text, and images or files between it.
+    enum Part: Equatable {
+        case text(String)
+        case rich(PasteSnapshot)
+    }
+
     /// `text` with each placeholder replaced by a copy from the history.
-    func fill(_ text: String, order: Order) -> String {
+    func fill(_ text: String, order: Order) -> [Part] {
         check()
         let count = text.components(separatedBy: Self.placeholder).count - 1
-        guard count > 0 else { return text }
+        guard count > 0 else { return text.isEmpty ? [] : [.text(text)] }
         log("paste: \(count) command(s), \(items.count) item(s) in history")
         return Self.fill(text, history: items, order: order)
     }
 
-    /// The pure part of `fill`: `history` is newest first. With fewer copies
-    /// than commands, the extra commands insert nothing.
+    /// The text of `parts` alone, for the clipboard, which holds one thing.
+    static func text(_ parts: [Part]) -> String {
+        parts.map { if case .text(let s) = $0 { return s } else { return "" } }.joined()
+    }
+
+    /// Text-only history, as one string.
     static func fill(_ text: String, history: [String], order: Order) -> String {
+        Self.text(fill(text, history: history.map(Item.text), order: order))
+    }
+
+    /// The pure part of `fill`: `history` is newest first. With fewer copies
+    /// than commands, the extra commands insert nothing. An image or file
+    /// splits the text around it into separate pastes.
+    static func fill(_ text: String, history: [Item], order: Order) -> [Part] {
         let parts = text.components(separatedBy: placeholder)
         let count = parts.count - 1
-        guard count > 0 else { return text }
         var picks = Array(history.prefix(count))
         if order == .oldest { picks.reverse() }
+        var done: [Part] = []
         var out = parts[0]
         for (k, part) in parts.dropFirst().enumerated() {
             if k < picks.count {
-                out += picks[k] + part
+                switch picks[k] {
+                case .text(let copy):
+                    out += copy + part
+                case .rich(let snap):
+                    if !out.isEmpty { done.append(.text(out)) }
+                    done.append(.rich(snap))
+                    out = part
+                }
             } else if out.hasSuffix(" "), part.hasPrefix(" ") || part.isEmpty {
                 // Nothing to insert: drop the space it would have sat between.
                 out.removeLast()
@@ -86,7 +134,8 @@ final class ClipboardHistory {
                 out += part.hasPrefix(" ") && (out.isEmpty || out.hasSuffix("\n")) ? String(part.dropFirst()) : part
             }
         }
-        return out
+        if !out.isEmpty { done.append(.text(out)) }
+        return done
     }
 
     // MARK: the spoken command

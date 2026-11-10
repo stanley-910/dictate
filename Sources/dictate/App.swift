@@ -391,7 +391,8 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let delivery = PasteTarget.delivery(chosen, stoppedIn: target?.processIdentifier, frontNow: front?.processIdentifier)
             if delivery != chosen {
                 // Focus is not moved back: the user went somewhere on purpose.
-                text = ClipboardHistory.shared.fill(text, order: config.pasteOrder)
+                // The clipboard holds one thing: the text, without any images.
+                text = ClipboardHistory.text(ClipboardHistory.shared.fill(text, order: config.pasteOrder))
                 if text.isEmpty { return }
                 if config.trailingSpace { text += " " }
                 Paster.copy(text)
@@ -400,21 +401,26 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return
             }
             if delivery != .copy, config.cursorContext {
-                text = CursorText.fit(text, after: CursorText.beforeCursor(), terms: config.dictionary,
-                                      isWord: CursorText.isKnownWord)
+                text = CursorText.fit(text, after: CursorText.beforeCursor(), terms: config.dictionary, isWord: CursorText.isKnownWord)
             }
             // After the fit, so a pasted copy keeps its own casing.
-            text = ClipboardHistory.shared.fill(text, order: config.pasteOrder)
-            if text.isEmpty { return }
-            if config.trailingSpace { text += " " }
+            var parts = ClipboardHistory.shared.fill(text, order: config.pasteOrder)
+            if parts.isEmpty { return }
+            if config.trailingSpace {
+                if case .text(let last) = parts[parts.count - 1] { parts[parts.count - 1] = .text(last + " ") }
+            }
+            // A terminal pastes text on Cmd-V; the programs in it take an image on Ctrl-V.
+            let richKey: CGEventFlags = PasteTarget.terminals.contains(front?.bundleIdentifier ?? "") ? .maskControl : .maskCommand
             switch delivery {
             case .paste:
-                Paster.paste(text, restoreClipboard: config.restoreClipboard, restoreAfter: config.restoreClipboardAfterSeconds)
+                Paster.paste(parts, restoreClipboard: config.restoreClipboard, restoreAfter: config.restoreClipboardAfterSeconds,
+                             richKey: richKey)
             case .copy:
-                Paster.copy(text)
+                Paster.copy(ClipboardHistory.text(parts))
                 log("copied")
             case .send:
-                Paster.paste(text, restoreClipboard: config.restoreClipboard, restoreAfter: config.restoreClipboardAfterSeconds, thenReturn: true)
+                Paster.paste(parts, restoreClipboard: config.restoreClipboard, restoreAfter: config.restoreClipboardAfterSeconds,
+                             thenReturn: true, richKey: richKey)
                 log("sent")
             }
         case (.saved(let take), .success(let text)):

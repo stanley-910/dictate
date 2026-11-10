@@ -323,11 +323,14 @@ security delete-identity -c dictate-dev                                 # if you
   ("Here is the error. Paste. And ...", "new line, paste, new line"), so
   "copy and paste it", "paste the link below" and "this paste with" stay.
   The copy goes in as it was, after every other rule. The history is the
-  daemon's own (macOS has none to read): the last 20 plain-text copies
-  since launch, in memory only, skipping items password managers mark
+  daemon's own (macOS has none to read): the last 20 copies since launch
+  (text, images, files; none over 64 MB), in memory only, skipping items password managers mark
   concealed or transient and dictate's own pastes; the log gives counts,
   never contents. With fewer copies than commands the extra ones insert
-  nothing. Saved transcripts, Copy Last Transcript, `dictate fix`,
+  nothing. An image or file is pasted on its own between the text around
+  it, with Ctrl-V in a terminal (where Claude Code and the like take an
+  image) and Cmd-V elsewhere; a copied transcript leaves images out. Saved
+  transcripts, Copy Last Transcript, `dictate fix`,
   `transcribe` and `listen` show `[paste]` where a copy would go.
 - Menu bar > Dictionary (Cmd-D while the menu is open) edits `dictionary`
   in a window, one term per line; Save writes the config file (keys come

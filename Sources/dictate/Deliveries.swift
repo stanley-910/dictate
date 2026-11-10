@@ -37,6 +37,12 @@ struct DeliveryQueue<Job, Output> {
 
 /// Where a transcript goes when it is ready.
 enum PasteTarget {
+    /// Terminal apps, by bundle identifier.
+    static let terminals: Set<String> = [
+        "com.mitchellh.ghostty", "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable",
+        "net.kovidgoyal.kitty", "com.github.wez.wezterm", "org.alacritty",
+    ]
+
     /// `chosen` (from the modifiers held), unless the app that was frontmost
     /// when the recording stopped is no longer frontmost: then a paste (or a
     /// send) would land in the wrong app, so it is copied instead. The pill is

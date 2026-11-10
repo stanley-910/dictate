@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import dictate
 
@@ -56,5 +57,15 @@ struct PasteTests {
 
     @Test func insertsVerbatim() {
         #expect(ClipboardHistory.fill("see [paste] here", history: ["let x = 1;\n"], order: .recent) == "see let x = 1;\n here")
+    }
+
+    @Test func anImageSplitsTheTextIntoSeparatePastes() {
+        let image: PasteSnapshot = [[.png: Data([1, 2, 3])]]
+        let history: [ClipboardHistory.Item] = [.rich(image), .text("older")]
+        #expect(ClipboardHistory.fill("See this\n\n[paste]\n\nand [paste] too", history: history, order: .recent)
+            == [.text("See this\n\n"), .rich(image), .text("\n\nand older too")])
+        #expect(ClipboardHistory.fill("[paste]", history: history, order: .recent) == [.rich(image)])
+        // The clipboard holds one thing: a copy keeps the text.
+        #expect(ClipboardHistory.text([.text("a "), .rich(image), .text("b")]) == "a b")
     }
 }
