@@ -168,3 +168,39 @@ struct IdentifierTests {
         #expect(CodeNotation.apply("call camel case to string on it") == "call `toString` on it")
     }
 }
+
+struct SymbolTests {
+    @Test(arguments: [
+        ("The function takes x arrow y", "The function takes x -> y"),
+        ("The lambda is x fat arrow x plus 1.", "The lambda is x => x + 1."),
+        ("from A arrow B", "from A -> B"),
+        ("Call std double colon vector.", "Call std::vector."),
+        ("The type is A double colon B double colon C.", "The type is A::B::C."),
+        ("Wait for it. . . . done.", "Wait for it... done."),
+        ("Wait for it dot dot dot done", "Wait for it... done"),
+        ("Open paren a plus b close paren times c.", "(a + b) * c."),
+        ("Open parent a plus b close parent times c.", "(a + b) * c."),
+        ("The cost open paren in dollars close paren is high.", "The cost (in dollars) is high."),
+        ("the array b. b open bracket i plus 1 close bracket", "the array `b`. `b[i + 1]`"),
+        ("Use open brace and close brace.", "Use open brace and close brace."),
+        ("A map open brace key colon value close brace", "A map {key colon value}"),
+    ])
+    func converts(_ said: String, _ typed: String) {
+        #expect(CodeNotation.apply(said) == typed)
+    }
+
+    @Test(arguments: [
+        "Follow the arrow to the exit. An arrow function is short.",
+        "The type is int arrow int arrow bool.",
+        "We map each key arrow value.",
+        "Use a double colon to separate them.",
+        "Write double colon syntax here.",
+        "A missing open paren and a close paren.",
+        "Open the paren file, then close it.",
+        "The fat arrow is short.",
+        "dot dot",
+    ])
+    func leavesProse(_ said: String) {
+        #expect(CodeNotation.apply(said) == said)
+    }
+}

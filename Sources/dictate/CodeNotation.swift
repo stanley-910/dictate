@@ -13,6 +13,7 @@ enum CodeNotation {
         out = bigO(out, spans: spans)
         let names = declaredNames(out)
         out = arithmetic(out, names: names, spans: spans)
+        out = symbols(out)
         return backtickVariables(out, names: names)
     }
 
@@ -36,7 +37,7 @@ enum CodeNotation {
     }
 
     /// What `arithmetic` and the comparisons write between operands.
-    static let codeOperators: Set<String> = ["+", "-", "*", "/", "%", "=", "==", "!=", "<", ">", "<=", ">="]
+    static let codeOperators: Set<String> = ["+", "-", "*", "/", "%", "=", "==", "!=", "<", ">", "<=", ">=", "->", "=>"]
 
     // MARK: arithmetic
 
@@ -205,14 +206,17 @@ enum CodeNotation {
     /// "root" are words ("write to the log 2 times"). Inside brackets
     /// (`index`) a lone operand counts and there are no comparisons.
     private struct Expression {
-        enum Mode { case bigO, arithmetic, index }
+        enum Mode { case bigO, arithmetic, index, group }
         struct Found { var text: String; var used: Int; var usesName: Bool }
 
         static let numbers = ["zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
                               "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10"]
         static let ordinals = ["second": "2", "third": "3", "fourth": "4", "fifth": "5"]
         static let operators = ["plus": "+", "minus": "-", "times": "*", "over": "/", "mod": "%", "modulo": "%",
-                                "+": "+", "-": "-", "*": "*", "/": "/", "%": "%"]
+                                "arrow": "->", "+": "+", "-": "-", "*": "*", "/": "/", "%": "%"]
+        /// "open paren ... close paren", and how the model hears "paren".
+        static let groups = ["paren": "(", "parens": "(", "parent": "(", "parenthesis": "(",
+                             "bracket": "[", "brackets": "["]
         /// Longest first, so "less than or equal to" wins over "less than".
         static let comparisons: [([String], String)] = [
             (["is", "less", "than", "or", "equal", "to"], "<="), (["less", "than", "or", "equal", "to"], "<="),
@@ -245,7 +249,7 @@ enum CodeNotation {
 
         private func isOperator(_ w: String?) -> Bool {
             guard let w else { return false }
-            return Self.operators[w] != nil || w == "divided" || w == "squared" || w == "cubed"
+            return Self.operators[w] != nil || w == "divided" || w == "squared" || w == "cubed" || w == "fat"
         }
 
         /// The comparison spoken at `k` words ahead, and how many words it takes.
@@ -270,9 +274,17 @@ enum CodeNotation {
                w.allSatisfy({ $0.isNumber || $0 == "." }), w.first!.isNumber, w.last!.isNumber { return w }
             // "2n" as the model writes it
             if let last = w.last, last.isLetter, w.count > 1, w.dropLast().allSatisfy(\.isNumber) { return w }
-            // "a" and "I" are words, not variables.
-            if w.count == 1, w.first!.isLetter, w != "a", w != "I" { return w }
+            // "a" and "I" are words, not variables, except in "open paren a plus b".
+            if w.count == 1, w.first!.isLetter, w != "a" || mode == .group, w != "I" { return w }
             return nil
+        }
+
+        /// The inside of "open paren ... close paren" starting at `i`, and
+        /// the words it takes, when it closes with the same kind.
+        private func group(_ open: String) -> (String, Int)? {
+            guard i + 2 < words.count, let sub = Expression.parse(Array(words[(i + 2)...]), mode: .group, names: names),
+                  peek(2 + sub.used) == "close", peek(3 + sub.used).flatMap({ Self.groups[$0] }) == open else { return nil }
+            return (sub.text, sub.used + 4)
         }
 
         private mutating func run() {
@@ -282,8 +294,16 @@ enum CodeNotation {
                 var w = words[i]
                 let lw = w.lowercased()
                 // "I mod n", "s of I": the model capitalizes the variable i.
-                if arithmetic, w == "I", expectOperand, mode == .index || isOperator(peek(1)) || comparison(1) != nil { w = "i" }
-                if expectOperand, lw == "negative", let o = operand(peek(1).map { _ in words[i + 1] }) {
+                if arithmetic, w == "I", expectOperand, mode == .index || mode == .group || isOperator(peek(1)) || comparison(1) != nil { w = "i" }
+                if arithmetic, lw == "open", let open = peek(1).flatMap({ Self.groups[$0] }),
+                   expectOperand || open == "[", let (inner, used) = group(open) {
+                    // "open paren a plus b close paren", or after an operand
+                    // "open bracket i close bracket" -> [i]
+                    out += open + inner + (open == "(" ? ")" : "]")
+                    i += used
+                    sawMath = true
+                    expectOperand = false; previousWasNumber = false
+                } else if expectOperand, lw == "negative", let o = operand(peek(1).map { _ in words[i + 1] }) {
                     out += "-" + o
                     i += 2
                     sawMath = true
@@ -364,9 +384,11 @@ enum CodeNotation {
                     i += k + 1
                     sawMath = true
                     if peek() == "power" { i += 1 }
-                } else if !expectOperand, let op = Self.operators[lw] ?? (lw == "divided" && peek(1) == "by" ? "/" : nil) {
+                } else if !expectOperand, let op = Self.operators[lw] ?? (lw == "divided" && peek(1) == "by" ? "/" : nil)
+                            ?? (lw == "fat" && peek(1) == "arrow" ? "=>" : nil),
+                          !(op.hasSuffix(">") && mode != .arithmetic) {
                     out += " \(op) "
-                    i += lw == "divided" ? 2 : 1
+                    i += lw == "divided" || lw == "fat" ? 2 : 1
                     sawMath = true
                     expectOperand = true
                     previousWasNumber = false
@@ -377,6 +399,74 @@ enum CodeNotation {
                 if !expectOperand, sawMath || mode != .arithmetic { best = Found(text: out, used: i, usesName: usesName) }
             }
         }
+    }
+
+    // MARK: symbols
+
+    /// Words before "double colon" or "open paren" that make it a noun:
+    /// "a double colon", "use double colon syntax", "the open paren".
+    static let symbolNouns: Set<String> = [
+        "a", "an", "the", "this", "that", "each", "every", "one", "no", "any", "missing", "unmatched",
+        "extra", "single", "triple", "use", "uses", "write", "writes", "type", "types", "add", "put",
+        "with", "without", "like", "say", "says", "of", "or", "and", "is", "are",
+    ]
+    /// Words after "double colon" that are not a name: "double colon syntax".
+    static let symbolEnds: Set<String> = ["syntax", "notation", "operator", "operators", "separator", "here", "there", "instead"]
+
+    /// "dot dot dot", or ". . ." as the model writes it -> "...";
+    /// "std double colon vector" -> std::vector between two names; "open
+    /// paren in dollars close paren" -> "(in dollars)" when a matching close
+    /// follows within 16 words. Expressions in parens were already written
+    /// by `arithmetic`.
+    static func symbols(_ text: String) -> String {
+        var text = text.replacingOccurrences(of: #" ?\.( \.){2,}"#, with: "...", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"(?i) ?\bdot dot dot\b"#, with: "...", options: .regularExpression)
+        let words = text.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        let bare = { (w: String) in w.lowercased().trimmingCharacters(in: .punctuationCharacters) }
+        // A name: letters, digits and "_", or code in backticks.
+        let isName = { (w: String) -> Bool in
+            let core = w.hasPrefix("`") && w.hasSuffix("`") && w.count > 2 ? String(w.dropFirst().dropLast()) : w
+            guard let first = core.first, first.isLetter || first == "_" else { return false }
+            return core.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == ":" }
+        }
+        var out: [String] = []
+        var inSpan = false
+        var i = 0
+        scan: while i < words.count {
+            let w = words[i]
+            if !inSpan, i + 2 < words.count, let left = out.last, bare(w) == "double", w.last?.isLetter == true,
+               bare(words[i + 1]) == "colon", words[i + 1].last?.isLetter == true, isName(left),
+               left == left.uppercased() || !symbolNouns.contains(left) && !identifierStops.contains(left) {
+                let right = words[i + 2]
+                let core = String(right.prefix { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "`" })
+                if isName(core), !identifierStops.contains(core.lowercased()), !symbolEnds.contains(core.lowercased()) {
+                    out[out.count - 1] = left + "::" + right
+                    i += 3
+                    continue
+                }
+            }
+            if !inSpan, bare(w) == "open", w.last?.isLetter == true, i + 1 < words.count,
+               let open = Expression.groups[bare(words[i + 1])] ?? (bare(words[i + 1]) == "brace" ? "{" : nil),
+               out.last.map({ $0.last?.isLetter != true || !symbolNouns.contains($0.lowercased()) }) ?? true {
+                let close = open == "(" ? ")" : open == "[" ? "]" : "}"
+                var j = i + 2
+                while j + 1 < words.count, j < i + 18, bare(words[j]) != "open" {
+                    let kind = bare(words[j + 1])
+                    if bare(words[j]) == "close", (Expression.groups[kind] ?? (kind == "brace" ? "{" : nil)) == open, j > i + 2 {
+                        let inner = words[(i + 2)..<j].joined(separator: " ")
+                        let trail = words[j + 1].drop { $0.isLetter }
+                        out.append(open + inner + close + trail)
+                        i = j + 2
+                        continue scan
+                    }
+                    j += 1
+                }
+            }
+            if w.filter({ $0 == "`" }).count % 2 == 1 { inSpan.toggle() }
+            out.append(w)
+            i += 1
+        }
+        return out.joined(separator: " ")
     }
 
     // MARK: identifiers

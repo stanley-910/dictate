@@ -256,6 +256,14 @@ security delete-identity -c dictate-dev                                 # if you
   style is being talked about ("the camel case style", "I prefer snake case
   names") and nothing changes. A spoken identifier is not yet an operand:
   "camel case max depth equals 2" gives `` `maxDepth` equals 2``.
+  Symbols: "x arrow y" -> `x -> y`, "x fat arrow x plus 1" -> `x => x + 1`
+  (between operands, so "follow the arrow" and "an arrow function" stay);
+  "std double colon vector" -> `std::vector` between two names (not after
+  "a", "use" and the like); "dot dot dot" or the model's ". . ." -> `...`;
+  "open paren a plus b close paren times c" -> `(a + b) * c`, "b open
+  bracket i close bracket" -> `b[i]`, and around any words, "open paren in
+  dollars close paren" -> `(in dollars)` (also "brace"), when the close
+  follows within 16 words and "the", "a", "missing" do not come before.
 - `layout` (default true) turns spoken layout into lines, after
   `codeNotation`. "bullet sort, next bullet scan" -> `- Sort` and `- Scan`
   on their own lines ("bullet", "new bullet", "next bullet", "bullet
