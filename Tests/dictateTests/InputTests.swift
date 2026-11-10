@@ -181,6 +181,11 @@ struct CursorTextTests {
         ("open", "Neovim please.", " Neovim please."),
         ("so", "X == 5 holds.", " X == 5 holds."),
         ("and", "`s` is empty.", " `s` is empty."),
+        // After a prompt or a label: a sentence starts, casing kept.
+        ("~/src $ ", "Fix the bug.", "Fix the bug."),
+        ("> ", "Fix the bug.", "Fix the bug."),
+        ("\u{276F} ", "Fix the bug.", "Fix the bug."),
+        ("Subject: ", "Fix the bug.", "Fix the bug."),
         // Already lowercase: only the space.
         ("and", "then this.", " then this."),
     ] as [(String?, String, String)])

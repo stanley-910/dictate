@@ -47,13 +47,15 @@ enum CursorText {
     }
 
     /// The cursor is inside a sentence: the last mark before it, past spaces
-    /// and closing quotes, is not a sentence end, a newline or the start.
+    /// and closing quotes, is a word, a number, a comma or the like. Not a
+    /// sentence end, a newline or the start, and not any other symbol: a
+    /// shell or chat prompt ("$ ", "> ", "Subject: ") starts a sentence.
     static func midSentence(_ before: String) -> Bool {
         for c in before.reversed() {
             if c == " " || c == "\t" || c == "\u{00A0}" { continue }
             if c.isNewline { return false }
             if closers.contains(c) || c == "\"" || c == "'" { continue }
-            return !terminators.contains(c)
+            return c.isLetter || c.isNumber || ",;(-\u{2013}\u{2014}".contains(c)
         }
         return false
     }
