@@ -157,6 +157,9 @@ security delete-identity -c dictate-dev                                 # if you
   Default `{"shift": "copy", "option": "send"}`; `command` is also accepted.
   Hold the modifier while pressing the stop key, or any time before the text
   lands; the hotkey still matches with a delivery modifier held.
+  If a different app is frontmost when the text is ready than when the
+  recording stopped, it is copied instead of pasted (or sent) and the `copied`
+  sound plays; focus is not moved back. Paste it where you meant with Cmd-V.
   `restoreClipboard: false` leaves the transcript on the clipboard after
   pasting; with it on, `restoreClipboardAfterSeconds` (0.25) is how long the
   transcript stays there first, so a clipboard history manager can catch it.
@@ -177,7 +180,7 @@ security delete-identity -c dictate-dev                                 # if you
 - The menu bar item has Copy Config Path for opening the file in an editor.
 - `sounds: false` silences everything, as does menu bar > Mute Sounds (stored
   in app defaults); `soundPack` names a sound per event
-  (`start`, `stop`, `cancel`, `arm`, `warn`), each a name from /System/Library/Sounds
+  (`start`, `stop`, `cancel`, `arm`, `warn`, `copied`), each a name from /System/Library/Sounds
   or a file path; `null` skips that one.
 - A floating pill above the Dock shows a live waveform while recording
   (`indicator: false` hides it).

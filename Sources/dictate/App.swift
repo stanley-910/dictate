@@ -23,8 +23,9 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var state: State { recording ? .recording : deliveries.isEmpty ? .idle : .transcribing }
 
     private enum Job {
-        /// A recording just stopped, with the modifiers held as it stopped.
-        case dictation(stopFlags: CGEventFlags)
+        /// A recording just stopped, with the modifiers held and the app
+        /// frontmost as it stopped.
+        case dictation(stopFlags: CGEventFlags, target: NSRunningApplication?)
         /// A saved recording decoded again from the menu; its text is copied.
         case saved(Recovery.Take)
     }
@@ -292,7 +293,8 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             showState()
             return
         }
-        let ticket = deliveries.add(.dictation(stopFlags: stopFlags))
+        let target = NSWorkspace.shared.frontmostApplication
+        let ticket = deliveries.add(.dictation(stopFlags: stopFlags, target: target))
         showState()
         playSound(config.soundPack.stop)
         dictation.text(from: pcm, recording: true) { [weak self] result in
@@ -322,14 +324,24 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func deliver(_ job: Job, _ result: Result<String, Error>) {
         switch (job, result) {
-        case (.dictation(let stopFlags), .success(var text)):
+        case (.dictation(let stopFlags, let target), .success(var text)):
             if text.isEmpty { return }
             if config.trailingSpace { text += " " }
             // While the next recording runs, the modifiers held are its own
             // (a hold key, a delivery pick for it): only the stop's count.
             let held = recording ? stopFlags
                 : CGEventSource.flagsState(.combinedSessionState).union(listener?.lastFlags ?? []).union(stopFlags)
-            switch config.delivery(for: held) {
+            let chosen = config.delivery(for: held)
+            let front = NSWorkspace.shared.frontmostApplication
+            let delivery = PasteTarget.delivery(chosen, stoppedIn: target?.processIdentifier, frontNow: front?.processIdentifier)
+            if delivery != chosen {
+                // Focus is not moved back: the user went somewhere on purpose.
+                Paster.copy(text)
+                playSound(config.soundPack.copied)
+                log("copied: recorded for \(target?.localizedName ?? "?"), \(front?.localizedName ?? "?") is frontmost now")
+                return
+            }
+            switch delivery {
             case .paste:
                 Paster.paste(text, restoreClipboard: config.restoreClipboard, restoreAfter: config.restoreClipboardAfterSeconds)
             case .copy:

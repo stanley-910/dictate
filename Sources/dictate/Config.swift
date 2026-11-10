@@ -96,6 +96,8 @@ struct Config: Codable {
         var arm: String? = "Morse"
         /// `maximumWarnSeconds` before the safety stop.
         var warn: String? = "Funk"
+        /// The transcript was copied, not pasted: another app is frontmost now.
+        var copied: String? = "Glass"
 
         init() {}
 
@@ -111,6 +113,7 @@ struct Config: Codable {
             cancel = try name(.cancel, d.cancel)
             arm = try name(.arm, d.arm)
             warn = try name(.warn, d.warn)
+            copied = try name(.copied, d.copied)
         }
     }
 

@@ -41,6 +41,24 @@ struct DeliveryQueueTests {
     }
 }
 
+struct PasteTargetTests {
+    @Test(arguments: [
+        (Config.Delivery.paste, Int32(10), Int32(10), Config.Delivery.paste),
+        (.paste, 10, 11, .copy),
+        (.send, 10, 11, .copy),
+        (.send, 10, 10, .send),
+        (.copy, 10, 11, .copy),
+    ] as [(Config.Delivery, pid_t, pid_t, Config.Delivery)])
+    func copiesWhenFocusMoved(_ chosen: Config.Delivery, _ stopped: pid_t, _ now: pid_t, _ expected: Config.Delivery) {
+        #expect(PasteTarget.delivery(chosen, stoppedIn: stopped, frontNow: now) == expected)
+    }
+
+    @Test func unknownAppPastesAsBefore() {
+        #expect(PasteTarget.delivery(.paste, stoppedIn: nil, frontNow: 3) == .paste)
+        #expect(PasteTarget.delivery(.paste, stoppedIn: 3, frontNow: nil) == .paste)
+    }
+}
+
 struct LoneModifierTests {
     enum Step { case down, up, other }
 

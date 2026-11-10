@@ -34,3 +34,16 @@ struct DeliveryQueue<Job, Output> {
         return ready
     }
 }
+
+/// Where a transcript goes when it is ready.
+enum PasteTarget {
+    /// `chosen` (from the modifiers held), unless the app that was frontmost
+    /// when the recording stopped is no longer frontmost: then a paste (or a
+    /// send) would land in the wrong app, so it is copied instead. The pill is
+    /// a non-activating panel and never becomes frontmost. When either app is
+    /// unknown it is delivered as chosen.
+    static func delivery(_ chosen: Config.Delivery, stoppedIn: pid_t?, frontNow: pid_t?) -> Config.Delivery {
+        guard chosen != .copy, let stoppedIn, let frontNow, stoppedIn != frontNow else { return chosen }
+        return .copy
+    }
+}
