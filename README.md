@@ -26,7 +26,7 @@ account, no settings UI. Configuration lives in `~/.config/dictate/config.json`
 
 ```sh
 git clone https://github.com/stanley-910/dictate.git && cd dictate
-scripts/fetch-deps.sh          # transcribe.cpp v0.2.3 xcframework into Vendor/, SHA-256 checked
+scripts/fetch-deps.sh          # transcribe.cpp v0.4.1 xcframework into Vendor/, SHA-256 checked
 scripts/fetch-model.sh q8      # 2.4 GB GGUF into ~/.local/share/dictate/models
 scripts/make-cert.sh           # one-time self-signed "dictate-dev" identity
 scripts/install.sh             # build dist/Dictate.app, copy to ~/Applications
@@ -172,7 +172,7 @@ security delete-identity -c dictate-dev                                 # if you
   case, spaces and punctuation, so `"Neovim"` fixes "neo vim" and "Neo-Vim",
   and `"GGUF"` fixes "G G U F". `dictionaryThreshold` (default 0.8) is the
   minimum similarity; near misses are logged. The model itself cannot be
-  biased (transcribe.cpp's prompt feature is Whisper-only), so this is a
+  biased (transcribe.cpp takes no prompt or vocabulary for Cohere), so this is a
   post-pass.
 - `replacements` run after the dictionary: whole-word, case-insensitive,
   in order; set `"regex": true` on an entry to use a regular expression.

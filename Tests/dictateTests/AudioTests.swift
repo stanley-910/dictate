@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import dictate
+import TranscribeCpp
 
 /// Signals made here rather than fixtures: the gate and the cuts depend only
 /// on levels.
@@ -79,5 +80,14 @@ struct LoopTests {
     @Test(arguments: ["No no no, not that one.", "very very very good", "ha ha ha ha ha ha"])
     func keepsShortRepeats(_ text: String) {
         #expect(Loop.cut(text) == text)
+    }
+
+    /// Both ways a decode stops short are retried in halves; other errors are not.
+    @Test func stoppedShortRunsKeepTheirText() {
+        #expect(Loop.partial(TranscribeError.outputTruncated(message: "", partial: nil)) == "")
+        #expect(Loop.partial(TranscribeError.outputRepetition(message: "", partial: nil)) == "")
+        #expect(Loop.partial(TranscribeError.aborted(message: "", partial: nil)) == nil)
+        #expect(Loop.partial(TranscribeError.inputTooLong("")) == nil)
+        #expect(Loop.partial(DictateError.notLoaded) == nil)
     }
 }

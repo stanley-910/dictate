@@ -95,11 +95,12 @@ final class Transcriber {
     private func run(_ audio: [Float], session: Session, options: RunOptions, halvings: Int) throws -> String {
         do {
             return try session.run(audio, options: options).text.trimmingCharacters(in: .whitespacesAndNewlines)
-        } catch TranscribeError.outputTruncated(_, let partial) {
+        } catch {
+            guard let partial = Loop.partial(error) else { throw error }
             let rate = Int(Recorder.targetRate)
             guard halvings > 0, audio.count >= 2 * rate else {
                 log("piece of \(seconds(audio.count)) s looped; keeping its text up to the loop")
-                return Loop.cut(partial?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return Loop.cut(partial).trimmingCharacters(in: .whitespacesAndNewlines)
             }
             log("piece of \(seconds(audio.count)) s looped; decoding it in two halves")
             let mid = Chunker.middleCut(audio, rate: rate)
@@ -171,6 +172,15 @@ enum Loop {
     /// phrase a few times at most ("no no no"). So the copies must span at
     /// least this many words, and there must be three or more of them.
     static let minSpan = 24
+
+    /// The text decoded before a run stopped short: at its token cap
+    /// (`outputTruncated`), or because transcribe.cpp saw the output start
+    /// repeating and stopped early, the repeats already dropped
+    /// (`outputRepetition`). Nil for any other error.
+    static func partial(_ error: Error) -> String? {
+        guard let error = error as? TranscribeError, error.isTruncated else { return nil }
+        return error.partial?.text ?? ""
+    }
 
     /// `text` up to the end of the first copy of the first phrase repeated
     /// back to back across `minSpan` words; unchanged when there is none.

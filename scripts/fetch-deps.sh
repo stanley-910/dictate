@@ -1,8 +1,8 @@
 #!/bin/sh
 # Download the prebuilt transcribe.cpp xcframework (Metal embedded) into Vendor/.
 set -eu
-VERSION="${TRANSCRIBE_CPP_VERSION:-v0.2.3}"
-CHECKSUM="944be4d5232f39c99608f676a2ddda2516e0ed3c9fb6db50685ffa8d20a8b9c9"
+VERSION="${TRANSCRIBE_CPP_VERSION:-v0.4.1}"
+CHECKSUM="fb5646e564036a6c49659e3efcf72eb567af20da31b8569045c9a08181d35126"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ZIP="$ROOT/Vendor/TranscribeCpp.xcframework.zip"
 URL="https://github.com/handy-computer/transcribe.cpp/releases/download/$VERSION/TranscribeCpp.xcframework.zip"
