@@ -69,3 +69,12 @@ struct ConfigTests {
         #expect(c.keepRecordings == 5)
     }
 }
+
+struct ShorthandTests {
+    /// Every built-in shorthand in the Cheat Sheet does something with the
+    /// default config, so a rule change that breaks one shows here.
+    @Test func everyShorthandConverts() {
+        let rows = Config().shorthandRows()
+        #expect(rows.flatMap(\.1).count == Config.shorthands.flatMap(\.1).count)
+    }
+}

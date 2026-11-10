@@ -298,6 +298,30 @@ struct Config: Codable {
         return out.replacingOccurrences(of: ClipboardHistory.marker, with: ClipboardHistory.placeholder)
     }
 
+    /// The built-in spoken shorthands by group, for menu bar > Cheat Sheet.
+    static let shorthands: [(String, [String])] = [
+        ("Layout", ["bullet a, bullet b", "number 1 a, number 2 b", "a, new line, b", "a, new paragraph, b", "paste"]),
+        ("Big-O", ["O of n log n", "theta of n squared", "omega of n"]),
+        ("Arithmetic", ["x squared plus 1", "i mod n", "negative 48", "2 to the n", "n divided by 2"]),
+        ("Comparisons", ["i is less than or equal to j", "x does not equal y", "n is at least 2",
+                         "i is less than j and j is less than n", "x is approximately 3.14"]),
+        ("Names", ["the string s, s of i", "camel case max depth", "snake case user id", "pascal case tree node",
+                   "the function f, f of x and y"]),
+        ("Code", ["x dot length", "count plus equals 1", "i plus plus", "x arrow y", "x fat arrow y",
+                  "std double colon vector", "open paren a plus b close paren times c", "wait dot dot dot"]),
+        ("Math", ["log base 2 of n", "n choose k", "x sub i", "sum from i equals 1 to n of x sub i",
+                  "2.5 times 10 to the minus 3"]),
+        ("Units", ["5 megabytes", "200 milliseconds", "100 megabits per second", "3 gigahertz"]),
+    ]
+
+    /// Each shorthand with what this config makes of it now; those a turned
+    /// off flag leaves as spoken are left out.
+    func shorthandRows() -> [(String, [(String, String)])] {
+        Config.shorthands.map { group, phrases in
+            (group, phrases.map { ($0, postProcess($0)) }.filter { $0.0 != $0.1 })
+        }.filter { !$0.1.isEmpty }
+    }
+
     private static let styleKey = "style"
 
     /// Menu pick stored in app defaults; nil = follow the config file.

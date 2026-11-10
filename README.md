@@ -323,7 +323,10 @@ security delete-identity -c dictate-dev                                 # if you
   `cheatSheet` with what the replacements turn it into now; picking a row
   copies the result. Handy for a spoken grammar built from regex rules,
   such as emoticons: `"cheatSheet": ["smile face", "wink tongue face"]`
-  shows `:)` and `;P` beside them.
+  shows `:)` and `;P` beside them. Below them, grouped, are the built-in
+  shorthands (layout, "paste", Big-O, comparisons, names, code, math,
+  units), each run through the post-processing now; groups whose flag is
+  off drop out.
 - Config keys that are missing take their defaults, so `{}` is valid.
   The file is watched: edits apply within about 2 s without a restart, and
   hotkey changes rebind. A recording in progress is never interrupted.

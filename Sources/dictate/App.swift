@@ -629,26 +629,33 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Plain replacements as written, then each `cheatSheet` phrase run
-    /// through the replacements, so the list always shows what dictating it
-    /// gives now. Picking a row copies the result.
+    /// through the replacements, then the built-in shorthands run through
+    /// the whole post-processing, so the list always shows what dictating
+    /// it gives now. Picking a row copies the result.
     private func updateCheatMenu() {
         cheatMenu.removeAllItems()
-        var rows = config.replacements.filter { $0.regex != true }.map { ($0.from, $0.to) }
+        let rows = config.replacements.filter { $0.regex != true }.map { ($0.from, $0.to) }
         let phrases = config.cheatSheet.map { ($0, Replacements.apply($0, rules: config.replacements)) }
-        let width = (rows + phrases).map { $0.0.count }.max() ?? 0
-        if !rows.isEmpty, !phrases.isEmpty { rows.append(("", "")) }
-        for (said, result) in rows + phrases {
-            if said.isEmpty {
-                cheatMenu.addItem(NSMenuItem.separator())
-                continue
+        let sections: [(String?, [(String, String)])] = [(nil, rows), (nil, phrases)]
+            + config.withMenuPicks.shorthandRows().map { ($0.0, $0.1) }
+        let width = sections.flatMap { $0.1 }.map { $0.0.count }.max() ?? 0
+        for (title, section) in sections where !section.isEmpty {
+            if cheatMenu.numberOfItems > 0 { cheatMenu.addItem(NSMenuItem.separator()) }
+            if let title {
+                let header = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                header.isEnabled = false
+                cheatMenu.addItem(header)
             }
-            let item = NSMenuItem(title: "", action: #selector(copyCheat(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = result
-            item.attributedTitle = NSAttributedString(
-                string: said.padding(toLength: width + 2, withPad: " ", startingAt: 0) + result,
-                attributes: [.font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)])
-            cheatMenu.addItem(item)
+            for (said, result) in section {
+                let item = NSMenuItem(title: "", action: #selector(copyCheat(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = result
+                item.attributedTitle = NSAttributedString(
+                    string: said.padding(toLength: width + 2, withPad: " ", startingAt: 0)
+                        + result.replacingOccurrences(of: "\n", with: "↵"),
+                    attributes: [.font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)])
+                cheatMenu.addItem(item)
+            }
         }
         if cheatMenu.items.isEmpty {
             let empty = NSMenuItem(title: "None", action: nil, keyEquivalent: "")
