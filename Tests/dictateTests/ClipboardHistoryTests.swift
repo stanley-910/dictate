@@ -68,4 +68,15 @@ struct PasteTests {
         // The clipboard holds one thing: a copy keeps the text.
         #expect(ClipboardHistory.text([.text("a "), .rich(image), .text("b")]) == "a b")
     }
+
+    @Test func aPasteByHandMovesTheSpokenPasteDownACopy() {
+        let history = ClipboardHistory(items: [.text("newest"), .text("older"), .text("oldest")])
+        #expect(history.remaining.first == .text("newest"))
+        history.pastedByUser()
+        #expect(history.remaining == [.text("older"), .text("oldest")])
+        history.pastedByUser()
+        history.pastedByUser()
+        history.pastedByUser()
+        #expect(history.remaining.isEmpty)
+    }
 }

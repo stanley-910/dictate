@@ -90,6 +90,8 @@ final class HotkeyListener {
     /// Goes up with every key or click of the user's that reaches an app, so
     /// a caller can tell whether anything was typed since it last looked.
     private(set) var inputCount = 0
+    /// The user pressed V with Command or Control held (the flags given).
+    var onPasteKey: ((CGEventFlags) -> Void)?
     private var lone: [LoneModifier]
     private var keyDown: [Bool]
 
@@ -206,7 +208,13 @@ final class HotkeyListener {
                 return Unmanaged.passUnretained(event)
             }
         }
-        if type == .keyDown { inputCount += 1 }
+        if type == .keyDown {
+            inputCount += 1
+            if code == CGKeyCode(kVK_ANSI_V), event.getIntegerValueField(.keyboardEventAutorepeat) == 0,
+               !event.flags.isDisjoint(with: [.maskCommand, .maskControl]) {
+                onPasteKey?(event.flags)
+            }
+        }
         return Unmanaged.passUnretained(event)
     }
 

@@ -324,6 +324,9 @@ security delete-identity -c dictate-dev                                 # if you
   punctuation, the start or end, or a spoken "new line" on each side
   ("Here is the error. Paste. And ...", "new line, paste, new line"), so
   "copy and paste it", "paste the link below" and "this paste with" stay.
+  A paste you make by hand (Cmd-V, or Ctrl-V in a terminal) counts too:
+  after it the first spoken "paste" is the copy before the one you pasted,
+  until you copy something new.
   The copy goes in as it was, after every other rule. The history is the
   daemon's own (macOS has none to read): the last 20 copies since launch
   (text, images, files; none over 64 MB), in memory only, skipping items password managers mark

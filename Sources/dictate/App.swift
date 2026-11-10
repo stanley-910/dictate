@@ -151,6 +151,14 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let l = HotkeyListener(hotkeys: hotkeys) { [weak self] event in
             DispatchQueue.main.async { self?.handle(event) }
         }
+        l.onPasteKey = { flags in
+            DispatchQueue.main.async {
+                // Ctrl-V pastes only in a terminal (an image into Claude Code).
+                let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+                guard flags.contains(.maskCommand) || PasteTarget.terminals.contains(front) else { return }
+                ClipboardHistory.shared.pastedByUser()
+            }
+        }
         l.capturesEscape = { [weak self] in
             // Read on the tap's thread; `recording` is only written on main, and a
             // stale read here costs at most one Escape passing through.

@@ -35,6 +35,20 @@ final class ClipboardHistory {
 
     /// Newest first.
     private(set) var items: [Item] = []
+    /// Pastes the user made by hand since the newest copy: each one moves
+    /// the spoken "paste" a copy down, as that copy is already in place.
+    private(set) var pastedByHand = 0
+
+    init(items: [Item] = []) { self.items = items }
+
+    /// The user pressed Cmd-V (or Ctrl-V in a terminal).
+    func pastedByUser() {
+        check()
+        pastedByHand += 1
+    }
+
+    /// The copies a spoken "paste" draws on, newest first.
+    var remaining: [Item] { Array(items.dropFirst(pastedByHand)) }
     private var seen = NSPasteboard.general.changeCount
     private var timer: Timer?
 
@@ -67,6 +81,7 @@ final class ClipboardHistory {
         } else {
             return
         }
+        pastedByHand = 0
         guard items.first != item else { return }
         items.insert(item, at: 0)
         if items.count > Self.limit { items.removeLast() }
@@ -92,8 +107,9 @@ final class ClipboardHistory {
         check()
         let count = text.components(separatedBy: Self.placeholder).count - 1
         guard count > 0 else { return text.isEmpty ? [] : [.text(text)] }
+        let items = remaining
         let kinds = items.prefix(count).map { if case .text = $0 { return "text" } else { return "image or file" } }
-        log("paste: \(count) command(s), \(items.count) item(s) in history; newest first: \(kinds.joined(separator: ", "))")
+        log("paste: \(count) command(s), \(items.count) item(s) in history after \(pastedByHand) pasted by hand; newest first: \(kinds.joined(separator: ", "))")
         return Self.fill(text, history: items, order: order)
     }
 
