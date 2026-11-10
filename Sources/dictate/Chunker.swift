@@ -78,6 +78,41 @@ struct Chunker {
         return pcm.startIndex + best * frame + frame / 2
     }
 
+    /// A seam probe takes this much fed audio from each side of a cut, ending
+    /// at the quietest point in the range.
+    static let probeSide = 3.0...5.0
+    /// And never reaches more than this much recording from the cut.
+    static let probeLimit = 15.0
+
+    /// How far a probe reaches from a cut into `side`, the audio leading away
+    /// from it (reversed for the audio before the cut), in samples. Quiet is
+    /// by `threshold`, the room of the piece before the cut. nil until
+    /// enough has arrived to tell; `complete` when no more is coming. Never
+    /// depends on audio past the point it returns.
+    func probeReach(_ side: [Float], threshold: Float, complete: Bool) -> Int? {
+        let limit = Int(Self.probeLimit * Double(rate))
+        let side = side.prefix(limit)
+        let complete = complete || side.count == limit
+        let fps = 1 / Self.frameSeconds
+        let least = Int(Self.probeSide.lowerBound * fps), most = Int(Self.probeSide.upperBound * fps)
+        var kept = Silence.Kept(threshold: threshold, maxPause: maxPause)
+        var levels: [Float] = []
+        var keptBefore: [Int] = []
+        while kept.frames <= most {
+            let at = levels.count * frame
+            guard at + frame <= side.count else {
+                guard complete else { return nil }
+                break
+            }
+            keptBefore.append(kept.frames)
+            levels.append(Silence.level(side[at..<(at + frame)]))
+            kept.add(levels[levels.count - 1])
+        }
+        let candidates = levels.indices.filter { keptBefore[$0] >= least && keptBefore[$0] < most }
+        guard let best = Self.quietest(candidates, levels: levels) else { return side.count }
+        return best * frame + frame / 2
+    }
+
     /// Where to halve a piece the model could not decode: the quietest point in
     /// its middle third, so neither half is much shorter than the other.
     static func middleCut(_ pcm: [Float], rate: Int) -> Int {

@@ -122,6 +122,17 @@ security delete-identity -c dictate-dev                                 # if you
   `maxPauseSeconds`), so a piece with long pauses in it covers more of the
   recording and there are fewer cuts: the model tends to end a sentence at
   each one.
+- Each cut is checked by decoding about 8 s of audio across it (cut at
+  quiet points on both sides). If that decode runs on without ending a
+  sentence there, the full stop the first piece ended with is taken out (or
+  becomes the comma the check heard), a word or two it heard at the cut
+  that neither piece kept (often a trailing "and") goes back in, and the
+  next piece's first word is lowercased, unless it is "I" or a name the
+  check also capitalizes. If the
+  check cannot be lined up with both pieces' words, the cut is left as it
+  is. Cuts are checked while you talk, so this rarely adds to the wait after
+  stop; the log line shows how many were checked, how long that took, and
+  how many were joined.
   Pieces are decoded while you are still talking, so stopping leaves only the
   last one: the wait after stop stays about a second however long you talk.
   Set 0 to disable. A piece the model loops on (one phrase over and over

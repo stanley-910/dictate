@@ -61,7 +61,13 @@ final class Transcriber {
             // points and stitch the pieces.
             let chunker = Chunker(config: self.config)
             var pieces = Pieces(chunker: chunker)
-            for chunk in chunker.split(pcm) { pieces.take(chunk, with: self) }
+            let chunks = chunker.split(pcm)
+            var at = 0
+            for (i, chunk) in chunks.enumerated() {
+                pieces.take(chunk, at: at, cut: i < chunks.count - 1, with: self)
+                at += chunk.count
+            }
+            pieces.probe({ Array(pcm[min($0, pcm.count)..<min($1, pcm.count)]) }, done: true, with: self)
             let ms = Int(Date().timeIntervalSince(t0) * 1000)
             log("transcribed \(seconds(pcm.count)) s of audio (\(seconds(pieces.fed)) s after pauses) in \(ms) ms (\(pieces.summary))")
             self.scheduleUnload()
@@ -76,15 +82,13 @@ final class Transcriber {
         LiveTranscript(transcriber: self, chunker: Chunker(config: config), recorded: recorded, progress: progress)
     }
 
-    /// One piece, long pauses shortened; also how many samples the model got.
-    /// On `queue` only.
-    fileprivate func decode(_ chunk: [Float], chunker: Chunker) throws -> (text: String, samples: Int) {
+    /// Audio as the model gets it, pauses already shortened. On `queue` only.
+    fileprivate func decode(_ audio: [Float], halvings: Int = 2) throws -> String {
         try load()
         guard let session else { throw DictateError.notLoaded }
         var options = RunOptions()
         options.language = config.language
-        let audio = chunker.squeeze(chunk)
-        return (try run(audio, session: session, options: options, halvings: 2), audio.count)
+        return try run(audio, session: session, options: options, halvings: halvings)
     }
 
     /// Now and then the model gets stuck repeating a phrase until it hits its
@@ -128,29 +132,80 @@ final class Transcriber {
 private struct Pieces {
     static let gap = "[…]"
     let chunker: Chunker
-    private var parts: [String] = []
-    private(set) var count = 0
+    private var parts: [Part] = []
     private(set) var fed = 0
     private var skipped = 0
     private var lastError: Error?
+    private var probes = 0
+    private var probeTime: TimeInterval = 0
+
+    private struct Part {
+        /// Empty when it had no speech, `gap` when it failed.
+        var text: String
+        /// Where it ends in the recording.
+        let end: Int
+        /// Its room level, which the probe of the cut at its end uses too.
+        let threshold: Float
+        /// Whether another piece follows, and so a seam to probe.
+        let cut: Bool
+        var probed = false
+        /// What a decode across the cut heard.
+        var probe: String?
+
+        var spoken: Bool { !text.isEmpty && text != Pieces.gap }
+    }
 
     init(chunker: Chunker) { self.chunker = chunker }
 
-    mutating func take(_ chunk: [Float], with transcriber: Transcriber) {
-        count += 1
-        if Silence.speechSeconds(chunk, rate: Int(Recorder.targetRate)) < Silence.minSpeechSeconds {
-            log("piece \(count) of \(seconds(chunk.count)) s has no speech; skipped")
+    var count: Int { parts.count }
+
+    /// Decodes `chunk`, which starts `at` samples into the recording.
+    mutating func take(_ chunk: [Float], at start: Int, cut: Bool, with transcriber: Transcriber) {
+        let threshold = chunker.threshold(chunk[...])
+        var part = Part(text: "", end: start + chunk.count, threshold: threshold, cut: cut)
+        defer { parts.append(part) }
+        if Silence.speechSeconds(chunk, rate: chunker.rate) < Silence.minSpeechSeconds {
+            log("piece \(count + 1) of \(seconds(chunk.count)) s has no speech; skipped")
             return
         }
         do {
-            let piece = try transcriber.decode(chunk, chunker: chunker)
-            if !piece.text.isEmpty { parts.append(piece.text) }
-            fed += piece.samples
+            let audio = Silence.squeeze(chunk, maxPause: chunker.maxPause, rate: chunker.rate, threshold: threshold)
+            part.text = try transcriber.decode(audio)
+            fed += audio.count
         } catch {
-            log("piece \(count) of \(seconds(chunk.count)) s failed: \(error)")
+            log("piece \(count + 1) of \(seconds(chunk.count)) s failed: \(error)")
             skipped += 1
             lastError = error
-            parts.append(Self.gap)
+            part.text = Self.gap
+        }
+    }
+
+    /// Decodes a short stretch across each cut whose audio is in, so the
+    /// seam's punctuation comes from a decode that heard both sides (`Seam`).
+    /// `audio(from, to)` is the recording in that range, as far as it goes;
+    /// `done` when the recording is over.
+    mutating func probe(_ audio: (Int, Int) -> [Float], done: Bool, with transcriber: Transcriber) {
+        let limit = Int(Chunker.probeLimit * Double(chunker.rate))
+        for i in parts.indices where parts[i].cut && !parts[i].probed {
+            let part = parts[i]
+            guard part.spoken else { parts[i].probed = true; continue }
+            let before = audio(max(0, part.end - limit), part.end)
+            let after = audio(part.end, part.end + limit)
+            guard let ahead = chunker.probeReach(after, threshold: part.threshold, complete: done),
+                  let back = chunker.probeReach(before.reversed(), threshold: part.threshold, complete: true)
+            else { continue }
+            parts[i].probed = true
+            let clip = Array(before.suffix(back) + after.prefix(ahead))
+            guard Silence.speechSeconds(clip, rate: chunker.rate) >= Silence.minSpeechSeconds else { continue }
+            let t0 = Date()
+            do {
+                let squeezed = Silence.squeeze(clip, maxPause: chunker.maxPause, rate: chunker.rate, threshold: part.threshold)
+                parts[i].probe = try transcriber.decode(squeezed, halvings: 0)
+            } catch {
+                log("seam probe after piece \(i + 1) failed: \(error)")
+            }
+            probes += 1
+            probeTime += Date().timeIntervalSince(t0)
         }
     }
 
@@ -160,10 +215,24 @@ private struct Pieces {
         return .success(text)
     }
 
-    var text: String { parts.joined(separator: " ") }
+    var text: String { stitched.text }
+
+    /// The pieces joined, each seam mended by its probe; also how many were.
+    private var stitched: (text: String, joined: Int) {
+        var texts = parts.map(\.text)
+        var joined = 0
+        for i in parts.indices.dropLast() where parts[i].spoken && parts[i + 1].spoken {
+            guard let probe = parts[i].probe else { continue }
+            let (left, right) = Seam.mend(texts[i], texts[i + 1], probe: probe)
+            if left != texts[i] || right != texts[i + 1] { joined += 1 }
+            (texts[i], texts[i + 1]) = (left, right)
+        }
+        return (texts.filter { !$0.isEmpty }.joined(separator: " "), joined)
+    }
 
     var summary: String {
         "\(count) chunk\(count == 1 ? "" : "s")" + (skipped > 0 ? ", \(skipped) failed" : "")
+            + (probes > 0 ? ", \(probes) seam\(probes == 1 ? "" : "s") probed in \(Int(probeTime * 1000)) ms, \(stitched.joined) joined" : "")
     }
 }
 
@@ -252,9 +321,12 @@ final class LiveTranscript {
             let t0 = Date()
             let early = self.pieces.count
             let tail = self.decoded < pcm.count ? Array(pcm[self.decoded...]) : []
-            for chunk in self.chunker.split(tail) where !chunk.isEmpty {
-                self.pieces.take(chunk, with: self.transcriber)
+            let chunks = self.chunker.split(tail).filter { !$0.isEmpty }
+            for (i, chunk) in chunks.enumerated() {
+                self.pieces.take(chunk, at: self.decoded, cut: i < chunks.count - 1, with: self.transcriber)
+                self.decoded += chunk.count
             }
+            self.pieces.probe({ Array(pcm[min($0, pcm.count)..<min($1, pcm.count)]) }, done: true, with: self.transcriber)
             let ms = Int(Date().timeIntervalSince(t0) * 1000)
             log("transcribed \(seconds(pcm.count)) s of audio (\(seconds(self.pieces.fed)) s after pauses) in \(ms) ms after stop (\(self.pieces.summary), \(early) while recording)")
             self.transcriber.scheduleUnload()
@@ -266,10 +338,12 @@ final class LiveTranscript {
         let pending = recorded(decoded)
         var start = 0
         while let cut = chunker.firstCut(pending[start...]) {
-            pieces.take(Array(pending[start..<cut]), with: transcriber)
+            pieces.take(Array(pending[start..<cut]), at: decoded, cut: true, with: transcriber)
             decoded += cut - start
             start = cut
         }
+        // Seams are probed while recording goes on, so stopping rarely waits on one.
+        pieces.probe({ [recorded] from, to in Array(recorded(from).prefix(to - from)) }, done: false, with: transcriber)
         if start > 0 { progress(pieces.text) }
     }
 }

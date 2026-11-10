@@ -117,6 +117,35 @@ struct AudioTests {
         #expect(offline.count > 4)
     }
 
+    @Test(arguments: [0, 0.6])
+    func probeReachIsTheSameLiveAndOffline(maxPause: Double) {
+        // Live, the probe's far side is measured while audio still arrives; it
+        // must land where it would on the whole recording.
+        let chunker = Chunker(maxSeconds: 30, maxPause: maxPause, rate: Self.rate)
+        for seed in 1...5 as ClosedRange<UInt64> {
+            let side = Self.speech(20, talk: 0.3...2, pause: 0.1...2.5, seed: seed)
+            let threshold = chunker.threshold(side[...])
+            let whole = chunker.probeReach(side, threshold: threshold, complete: true)
+            var live: Int?
+            for now in stride(from: 0, through: side.count, by: Self.rate / 2) where live == nil {
+                live = chunker.probeReach(Array(side[..<now]), threshold: threshold, complete: false)
+            }
+            #expect(live == whole)
+            // 3-5 s of fed audio: the reach is at least 3 s of recording, at most the limit.
+            let reach = Double(whole ?? 0) / Double(Self.rate)
+            #expect(reach >= 3 && reach <= Chunker.probeLimit)
+            let fed = Double(chunker.squeeze(Array(side.prefix(whole ?? 0))).count) / Double(Self.rate)
+            #expect(fed > 2.5 && fed < 5.5)
+        }
+    }
+
+    @Test func probeReachTakesAllOfAShortEnd() {
+        let chunker = Chunker(maxSeconds: 30, maxPause: 0.6, rate: Self.rate)
+        let side = Self.speech(2, talk: 1...1, pause: 0.5...0.5)
+        #expect(chunker.probeReach(side, threshold: 0.01, complete: false) == nil)
+        #expect(chunker.probeReach(side, threshold: 0.01, complete: true) == side.count)
+    }
+
     @Test func squeezeShortensLongPauses() {
         let pcm = Self.tone(1, amplitude: 0.1) + [Float](repeating: 0, count: 5 * Self.rate) + Self.tone(1, amplitude: 0.1)
         let out = Silence.squeeze(pcm, maxPause: 1, rate: Self.rate)
