@@ -96,6 +96,9 @@ struct Config: Codable {
     /// Spoken layout: "bullet ... bullet ..." -> "- " items, "number 1 ...
     /// number 2 ..." -> "1. " items, "new line", "new paragraph".
     var layout: Bool = true
+    /// "5 megabytes" -> "5 MB", "200 milliseconds" -> "200 ms", "3
+    /// gigahertz" -> "3 GHz" after a number; minutes and seconds stay words.
+    var units: Bool = true
     /// Which copy each spoken "paste" inserts: "recent" (the newest first,
     /// then the one before) or "oldest" (the oldest of the last N copies
     /// first, for N commands).
@@ -231,6 +234,7 @@ struct Config: Codable {
         codeNotation = try c.decodeIfPresent(Bool.self, forKey: .codeNotation) ?? d.codeNotation
         codeSpans = try c.decodeIfPresent(Bool.self, forKey: .codeSpans) ?? d.codeSpans
         layout = try c.decodeIfPresent(Bool.self, forKey: .layout) ?? d.layout
+        units = try c.decodeIfPresent(Bool.self, forKey: .units) ?? d.units
         pasteOrder = try c.decodeIfPresent(ClipboardHistory.Order.self, forKey: .pasteOrder) ?? d.pasteOrder
     }
 
@@ -273,13 +277,14 @@ struct Config: Codable {
         try (encoder.encode(JSONValue.object(object)) + Data("\n".utf8)).write(to: url, options: .atomic)
     }
 
-    /// Dictionary, replacements, code notation, then layout, in that order.
+    /// Dictionary, replacements, code notation, units, then layout, in that order.
     /// A spoken "paste" comes out as `ClipboardHistory.placeholder`.
     func postProcess(_ raw: String) -> String {
         let text = ClipboardHistory.mark(casing == .lower ? raw.lowercased() : raw)
         let fixed = Dictionary.apply(text, terms: Dictionary.terms(dictionary), threshold: dictionaryThreshold)
         var out = Replacements.apply(fixed, rules: replacements)
         if codeNotation { out = CodeNotation.apply(out, spans: codeSpans) }
+        if units { out = Units.apply(out) }
         if layout { out = Layout.apply(out, capitalize: casing != .lower) }
         if casing == .sentence, let first = out.first, first.isLowercase, !CodeNotation.startsWithCode(out) {
             out = first.uppercased() + out.dropFirst()

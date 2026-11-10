@@ -280,6 +280,13 @@ security delete-identity -c dictate-dev                                 # if you
   bracket i close bracket" -> `b[i]`, and around any words, "open paren in
   dollars close paren" -> `(in dollars)` (also "brace"), when the close
   follows within 16 words and "the", "a", "missing" do not come before.
+- `units` (default true) abbreviates units after a number, as a technical
+  writer would: "5 megabytes" -> `5 MB` (KB to PB, KiB to TiB), "200
+  milliseconds" -> `200 ms` (also µs, ns), "3 gigahertz" -> `3 GHz` (Hz to
+  GHz), "100 megabits per second" -> `100 Mbps` (kbps, Gbps, MB/s), and
+  the model's own "4MB" -> `4 MB`. Seconds, minutes, hours, bytes and bits
+  stay words ("wait 5 minutes", "a 10 gigabit network"), and so does a unit
+  with no number ("a few megabytes"). The model writes "3x" itself.
 - `layout` (default true) turns spoken layout into lines, after
   `codeNotation`. "bullet sort, next bullet scan" -> `- Sort` and `- Scan`
   on their own lines ("bullet", "new bullet", "next bullet", "bullet
