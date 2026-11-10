@@ -90,8 +90,8 @@ struct IndexingAndComparisonTests {
          "Take string `s`, then check if `s[i + 1] <= x`."),
         ("Read the array b of i plus one and the array c at k.", "Read the array `b[i + 1]` and the array `c[k]`."),
         ("pointers i and j. While i is less than j, move i.", "pointers `i` and `j`. While `i < j`, move `i`."),
-        ("If i is not equal to j and n is greater than or equal to 2, return.", "If i != j and n >= 2, return."),
-        ("x is less than 5 and y equals 2", "x < 5 and y == 2"),
+        ("If i is not equal to j and n is greater than or equal to 2, return.", "If i != j && n >= 2, return."),
+        ("x is less than 5 and y equals 2", "x < 5 && y == 2"),
         ("n is at least 2", "n >= 2"),
         ("x does not equal y", "x != y"),
         ("x is set to 4", "x = 4"),
@@ -202,5 +202,53 @@ struct SymbolTests {
     ])
     func leavesProse(_ said: String) {
         #expect(CodeNotation.apply(said) == said)
+    }
+}
+
+struct CodeTalkTests {
+    @Test(arguments: [
+        ("Camel case max depth equals 2.", "`maxDepth == 2`."),
+        ("Call camel case get max of x and y.", "Call `getMax(x, y)`."),
+        ("The function f of x equals x squared plus 1.", "The function `f(x) == x^2 + 1`."),
+        ("Define the function f then f of x plus 1 is 3.", "Define the function `f` then `f(x + 1)` is 3."),
+        ("the function f and the array s. f of s at i", "the function `f` and the array `s`. `f(s[i])`"),
+        ("i plus equals 2 and j minus equals 1", "i += 2 and j -= 1"),
+        ("Set count plus equals 1.", "Set count += 1."),
+        ("For i from 0 to n, i++.", "For i from 0 to n, i++."),
+        ("I plus plus moves forward.", "i++ moves forward."),
+        ("then count plus plus", "then count++"),
+        ("If i is less than j and j is less than n then swap.", "If i < j && j < n then swap."),
+        ("If i equals 0 or j equals n then stop.", "If i == 0 || j == n then stop."),
+        ("the array v. Return not v of i and i is less than n.", "the array `v`. Return `!v[i] && i < n`."),
+        ("x equals 1 and we stop", "x == 1 and we stop"),
+        ("x dot length is the size", "x.length is the size"),
+        ("X dot length minus 1", "X.length - 1"),
+        ("x.length minus 1", "x.length - 1"),
+        ("string s. s.length minus 1", "string `s`. `s.length - 1`"),
+    ])
+    func converts(_ said: String, _ typed: String) {
+        #expect(CodeNotation.apply(said) == typed)
+    }
+
+    @Test(arguments: [
+        "C plus plus is fast.",
+        "Call foo of x and y.",  // foo never declared or spoken as an identifier
+        "swap f of x",  // f never declared a function
+        "If not x and y then return.",  // "not" counts only beside a comparison
+        "it is not x but y",
+        "polka dot dress",
+        "the x dot product",
+        "e.g. plus 2",
+        "Set camel case max depth to 0.".replacingOccurrences(of: "camel case max depth", with: "`maxDepth`"),
+        "`maxDepth` of the tree",
+        "A plus plus grade",
+        "five plus plus",
+    ])
+    func leavesProse(_ said: String) {
+        #expect(CodeNotation.apply(said) == said)
+    }
+
+    @Test func spans() {
+        #expect(CodeNotation.apply("Call node.next.", spans: true) == "Call `node.next`.")
     }
 }

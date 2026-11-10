@@ -254,8 +254,18 @@ security delete-identity -c dictate-dev                                 # if you
   with a comma, or end the name with "to", "and" and the like. A later "max
   depth" is written `` `maxDepth` `` as well. After "the", "a" or "in" the
   style is being talked about ("the camel case style", "I prefer snake case
-  names") and nothing changes. A spoken identifier is not yet an operand:
-  "camel case max depth equals 2" gives `` `maxDepth` equals 2``.
+  names") and nothing changes. A spoken identifier is an operand:
+  "camel case max depth equals 2" -> `` `maxDepth == 2` ``.
+  Code talk: a function declared like a variable ("the function f") or a
+  spoken identifier before "of" is called, "f of x and y" -> `f(x, y)`
+  ("foo of x" stays: say "camel case foo of x"); "x dot length" -> `x.length`
+  after a letter, declared name or identifier (not "polka dot", "x dot
+  product"), and `x.length` the model writes is an operand; "count plus
+  equals 1" -> `count += 1`, also `-=`, `*=`; "i plus plus" -> `i++` (not
+  "C plus plus"); "and" / "or" between two comparisons -> `&&` / `||`
+  ("i is less than j and j is less than n" -> `i < j && j < n`, but "x
+  equals 1 and we stop" keeps "and"), and "not v of i" -> `!v[i]` only in
+  such a join.
   Symbols: "x arrow y" -> `x -> y`, "x fat arrow x plus 1" -> `x => x + 1`
   (between operands, so "follow the arrow" and "an arrow function" stay);
   "std double colon vector" -> `std::vector` between two names (not after

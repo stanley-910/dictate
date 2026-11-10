@@ -12,7 +12,7 @@ enum CodeNotation {
         var out = identifiers(text)
         out = bigO(out, spans: spans)
         let names = declaredNames(out)
-        out = arithmetic(out, names: names, spans: spans)
+        out = arithmetic(out, names: names, functions: declaredNames(out, after: functionWords), spans: spans)
         out = symbols(out)
         return backtickVariables(out, names: names)
     }
@@ -37,7 +37,9 @@ enum CodeNotation {
     }
 
     /// What `arithmetic` and the comparisons write between operands.
-    static let codeOperators: Set<String> = ["+", "-", "*", "/", "%", "=", "==", "!=", "<", ">", "<=", ">=", "->", "=>"]
+    static let codeOperators: Set<String> = [
+        "+", "-", "*", "/", "%", "=", "==", "!=", "<", ">", "<=", ">=", "->", "=>", "+=", "-=", "*=", "&&", "||",
+    ]
 
     // MARK: arithmetic
 
@@ -47,23 +49,26 @@ enum CodeNotation {
     /// or "s at i" -> "s[i]". It needs an operand on each side, so "5 plus
     /// years", "C plus plus" and "three times a day" stay as they are. An
     /// expression that uses a declared variable goes in backticks whole.
-    static func arithmetic(_ text: String, names: Set<String> = [], spans: Bool = false) -> String {
+    /// A spoken identifier ("`maxDepth`") is an operand too, and a declared
+    /// function or an identifier before "of" is called: "f of x" -> f(x).
+    static func arithmetic(_ text: String, names: Set<String> = [], functions: Set<String> = [], spans: Bool = false) -> String {
         let chars = Array(text)
         var out = ""
         var i = 0
         while i < chars.count {
-            if let end = spanEnd(chars, i) ?? bigOEnd(chars, i) {
-                out += String(chars[i..<end])
-                i = end
-                continue
-            }
-            if isWordStart(chars, i), chars[i].isLetter || chars[i].isNumber {
+            if isWordStart(chars, i), chars[i].isLetter || chars[i].isNumber || identifierEnd(chars, i) != nil {
                 let toks = tokens(chars, from: i, first: true)
-                if let found = Expression.parse(toks.map { $0.0 }, mode: .arithmetic, names: names), found.used > 0 {
+                if let found = Expression.parse(toks.map { $0.0 }, mode: .arithmetic, names: names, functions: functions),
+                   found.used > 0, found.math {
                     out += spans || found.usesName ? "`\(found.text)`" : found.text
                     i = toks[found.used - 1].1
                     continue
                 }
+            }
+            if let end = spanEnd(chars, i) ?? bigOEnd(chars, i) {
+                out += String(chars[i..<end])
+                i = end
+                continue
             }
             out.append(chars[i])
             i += 1
@@ -87,6 +92,14 @@ enum CodeNotation {
             } else { j += 1 }
         }
         return nil
+    }
+
+    /// Past the closing backtick of a spoken identifier at `i`: "`maxDepth`".
+    private static func identifierEnd(_ c: [Character], _ i: Int) -> Int? {
+        guard c[i] == "`", i + 1 < c.count, c[i + 1].isLetter || c[i + 1] == "_" else { return nil }
+        var j = i + 1
+        while j < c.count, c[j].isLetter || c[j].isNumber || c[j] == "_" { j += 1 }
+        return j < c.count && c[j] == "`" ? j + 1 : nil
     }
 
     /// Past the ")" of an `O(...)` that `bigO` wrote at `i`, so arithmetic
@@ -138,6 +151,11 @@ enum CodeNotation {
             j += 1
             while j < c.count, c[j].isNumber { j += 1 }
         }
+        // "x.length", "node.next" as the model writes them; "e.g." is not one.
+        while digits, j > i, c[j - 1].isLetter, j + 2 < c.count, c[j] == ".", c[j + 1].isLetter, c[j + 2].isLetter {
+            j += 1
+            while j < c.count, c[j].isLetter || c[j].isNumber || c[j] == "_" { j += 1 }
+        }
         return j > i ? (String(c[i..<j]), j) : nil
     }
 
@@ -154,6 +172,11 @@ enum CodeNotation {
             if k > j, k < c.count, "+-*/%".contains(c[k]), k + 1 < c.count, c[k + 1] == " " {
                 out.append((String(c[k]), k + 1))
                 j = k + 1
+                continue
+            }
+            if k > j || (out.isEmpty && first), k < c.count, let end = identifierEnd(c, k) {
+                out.append((String(c[k..<end]), end))
+                j = end
                 continue
             }
             guard k > j || (out.isEmpty && k < c.count && (first || c[k].isNumber)), let (w, end) = word(c, k) else { break }
@@ -207,7 +230,13 @@ enum CodeNotation {
     /// (`index`) a lone operand counts and there are no comparisons.
     private struct Expression {
         enum Mode { case bigO, arithmetic, index, group }
-        struct Found { var text: String; var used: Int; var usesName: Bool }
+        struct Found {
+            var text: String; var used: Int; var usesName: Bool
+            /// Not only "not x", which counts only joined to a comparison.
+            var math = true
+            /// A comparison, or "not x": what "and" and "or" join.
+            var comparison = false, boolean = false
+        }
 
         static let numbers = ["zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
                               "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10"]
@@ -232,6 +261,7 @@ enum CodeNotation {
         let words: [String]
         let mode: Mode
         let names: Set<String>
+        var functions: Set<String> = []
         var i = 0
         var out = ""
         var best: Found?
@@ -239,10 +269,12 @@ enum CodeNotation {
         private var sawMath = false
         private var usesName = false
         private var lastOperand = ""
+        private var sawComparison = false
+        private var negated = false
         private var arithmetic: Bool { mode != .bigO }
 
-        static func parse(_ words: [String], mode: Mode, names: Set<String> = []) -> Found? {
-            var e = Expression(words: words, mode: mode, names: names)
+        static func parse(_ words: [String], mode: Mode, names: Set<String> = [], functions: Set<String> = []) -> Found? {
+            var e = Expression(words: words, mode: mode, names: names, functions: functions)
             e.run()
             return e.best
         }
@@ -276,7 +308,33 @@ enum CodeNotation {
             if let last = w.last, last.isLetter, w.count > 1, w.dropLast().allSatisfy(\.isNumber) { return w }
             // "a" and "I" are words, not variables, except in "open paren a plus b".
             if w.count == 1, w.first!.isLetter, w != "a" || mode == .group, w != "I" { return w }
+            // A spoken identifier, "`maxDepth`", or a member the model wrote, "x.length".
+            if w.count > 2, w.hasPrefix("`"), w.hasSuffix("`") { return String(w.dropFirst().dropLast()) }
+            if w.contains("."), w.first!.isLetter, w.split(separator: ".").allSatisfy({ $0.first!.isLetter }) { return w }
             return nil
+        }
+
+        /// A word that "plus equals" or "plus plus" follows: "count plus
+        /// equals 1" -> count += 1, "count plus plus" -> count++.
+        private func assignTarget(_ w: String) -> Bool {
+            guard mode == .arithmetic, out.isEmpty, w.count > 1, w.allSatisfy({ $0.isLowercase || $0 == "_" }),
+                  let p = peek(1), p == "plus" || p == "minus" || p == "times" else { return false }
+            return peek(2) == "equals" || (peek(2) == p && p != "times")
+        }
+
+        /// The arguments after "of" at `i`: "f of x and y" -> "x, y".
+        private func arguments() -> (String, Int)? {
+            var k = i + 1
+            var parts: [String] = []
+            var used = 0
+            while k < words.count, let sub = Expression.parse(Array(words[k...]), mode: .index, names: names, functions: functions) {
+                parts.append(sub.text)
+                k += sub.used
+                used = k - i
+                guard k + 1 < words.count, ["and", "comma"].contains(words[k].lowercased()) else { break }
+                k += 1
+            }
+            return parts.isEmpty ? nil : (parts.joined(separator: ", "), used)
         }
 
         /// The inside of "open paren ... close paren" starting at `i`, and
@@ -285,6 +343,11 @@ enum CodeNotation {
             guard i + 2 < words.count, let sub = Expression.parse(Array(words[(i + 2)...]), mode: .group, names: names),
                   peek(2 + sub.used) == "close", peek(3 + sub.used).flatMap({ Self.groups[$0] }) == open else { return nil }
             return (sub.text, sub.used + 4)
+        }
+
+        private var found: Found {
+            Found(text: out, used: i, usesName: usesName, math: sawMath || mode != .arithmetic,
+                  comparison: sawComparison, boolean: sawComparison || negated)
         }
 
         private mutating func run() {
@@ -303,6 +366,13 @@ enum CodeNotation {
                     i += used
                     sawMath = true
                     expectOperand = false; previousWasNumber = false
+                } else if mode == .arithmetic, expectOperand, lw == "not", out.isEmpty || out.hasSuffix("& ") || out.hasSuffix("| "),
+                          i + 1 < words.count, operand(words[i + 1]) != nil {
+                    // "not visited" -> !visited, counted only beside a comparison.
+                    out += "!"
+                    i += 1
+                    negated = true
+                    continue
                 } else if expectOperand, lw == "negative", let o = operand(peek(1).map { _ in words[i + 1] }) {
                     out += "-" + o
                     i += 2
@@ -328,27 +398,50 @@ enum CodeNotation {
                     i += 1
                     sawMath = true
                     expectOperand = false; previousWasNumber = false
-                } else if let o = operand(w) {
+                } else if let o = operand(w) ?? (assignTarget(w) ? w : nil) {
                     if !expectOperand {
                         // "2 n" -> 2n; any other pair of operands ends the phrase.
                         guard previousWasNumber, !o.first!.isNumber else { return }
                     }
                     // "s of i plus s of j" is s[i] + s[j]: an index ends before another indexed name.
-                    if mode == .index, names.contains(o), peek(1) == "of" || peek(1) == "at" { return }
+                    if mode == .index, !out.isEmpty, names.contains(o), peek(1) == "of" || peek(1) == "at" { return }
+                    let identifier = w.hasPrefix("`")
                     lastOperand = o
                     out += o
                     i += 1
                     previousWasNumber = o.first!.isNumber
                     expectOperand = false
-                    if names.contains(o) {
-                        usesName = true
+                    if o.contains(".") { sawMath = true }
+                    if identifier || names.contains(String(o.prefix { $0 != "." })) { usesName = true }
+                    if functions.contains(o) || identifier, peek() == "of", let (args, used) = arguments() {
+                        // "f of x and y" -> f(x, y), for a declared function or a spoken identifier
+                        out += "(\(args))"
+                        i += used
+                        sawMath = true
+                    } else if names.contains(o), !functions.contains(o) || peek() == "at" {
                         // "s of i plus 1" -> s[i + 1]
                         if peek() == "of" || peek() == "at", i + 1 < words.count,
-                           let sub = Expression.parse(Array(words[(i + 1)...]), mode: .index, names: names) {
+                           let sub = Expression.parse(Array(words[(i + 1)...]), mode: .index, names: names, functions: functions) {
                             out += "[\(sub.text)]"
                             i += 1 + sub.used
                             sawMath = true
                         }
+                    }
+                    // "x dot length" -> x.length, after a letter, a declared name or an identifier.
+                    let named = identifier || names.contains(o) || (o.count == 1 && o.first!.isLetter) || operand(w) == nil
+                    while arithmetic, named, peek() == "dot", i + 1 < words.count,
+                          case let m = words[i + 1], m.count > 1, m.allSatisfy(\.isLetter),
+                          !identifierStops.contains(m.lowercased()), m.lowercased() != "product" {
+                        out += "." + m
+                        i += 2
+                        sawMath = true
+                    }
+                    // "i plus plus" -> i++, not "C plus plus" (a capital needs declaring).
+                    if arithmetic, named, !(o.first!.isUppercase && o.count == 1 && !names.contains(o)),
+                       let p = peek(), p == peek(1), p == "plus" || p == "minus" {
+                        out += p == "plus" ? "++" : "--"
+                        i += 2
+                        sawMath = true
                     }
                 } else if !expectOperand, let (op, length) = comparison(),
                           // "at least 3 people" is prose; "n is at least 3" is not.
@@ -358,6 +451,7 @@ enum CodeNotation {
                     out += " \(op) "
                     i += length
                     sawMath = true
+                    sawComparison = true
                     expectOperand = true
                     previousWasNumber = false
                     continue
@@ -384,6 +478,26 @@ enum CodeNotation {
                     i += k + 1
                     sawMath = true
                     if peek() == "power" { i += 1 }
+                } else if !expectOperand, mode == .arithmetic, lw == "and" || lw == "or", sawComparison || negated,
+                          i + 1 < words.count,
+                          let next = Expression.parse(Array(words[(i + 1)...]), mode: .arithmetic, names: names, functions: functions),
+                          next.boolean, sawComparison || next.comparison {
+                    // "i is less than j and j is less than n" -> i < j && j < n: only between comparisons.
+                    out += (lw == "and" ? " && " : " || ") + next.text
+                    i += 1 + next.used
+                    if next.usesName { usesName = true }
+                    sawMath = true
+                    sawComparison = true
+                    best = found
+                    return
+                } else if !expectOperand, mode == .arithmetic, ["plus", "minus", "times"].contains(lw), peek(1) == "equals" {
+                    // "count plus equals 1" -> count += 1
+                    out += " \(Self.operators[lw]!)= "
+                    i += 2
+                    sawMath = true
+                    expectOperand = true
+                    previousWasNumber = false
+                    continue
                 } else if !expectOperand, let op = Self.operators[lw] ?? (lw == "divided" && peek(1) == "by" ? "/" : nil)
                             ?? (lw == "fat" && peek(1) == "arrow" ? "=>" : nil),
                           !(op.hasSuffix(">") && mode != .arithmetic) {
@@ -396,7 +510,7 @@ enum CodeNotation {
                 } else {
                     return
                 }
-                if !expectOperand, sawMath || mode != .arithmetic { best = Found(text: out, used: i, usesName: usesName) }
+                if !expectOperand, sawMath || mode != .arithmetic || negated { best = found }
             }
         }
     }
@@ -598,7 +712,10 @@ enum CodeNotation {
     }
 
     /// The letters introduced as variables: "string s", "pointers i and j".
-    static func declaredNames(_ text: String) -> Set<String> {
+    /// Type words a function's name follows: "the function f".
+    static let functionWords: Set<String> = ["function", "functions", "method", "methods"]
+
+    static func declaredNames(_ text: String, after declarers: Set<String> = declarers) -> Set<String> {
         let words = text.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
         var names: Set<String> = []
         var i = 0
