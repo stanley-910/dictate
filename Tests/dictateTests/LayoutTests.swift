@@ -25,6 +25,16 @@ struct LayoutTests {
         ("Steps, bullet sort the array, next bullet scan from the left, new paragraph, that is all.",
          "Steps:\n- Sort the array\n- Scan from the left\n\nThat is all."),
         ("bullet x < y, bullet done", "- x < y\n- Done"),
+        // The shapes the model gives for "speaking, speaking, new line, new
+        // line, paste, new line, new line, and here's another example ...".
+        ("Speaking, speaking, new line, new line, paste, new line, new line, and here's another example new line, new line, paste.",
+         "Speaking, speaking\n\nPaste\n\nAnd here's another example\n\nPaste."),
+        ("Speaking, speaking. New line, new line. Paste. New line, new line. And here's another example. New line, new line. Paste.",
+         "Speaking, speaking.\n\nPaste.\n\nAnd here's another example.\n\nPaste."),
+        ("Here is my code new line paste new line and the error new line paste.",
+         "Here is my code\nPaste\nAnd the error\nPaste."),
+        ("Done. New line.", "Done.\n"),
+        ("Done, new paragraph", "Done\n\n"),
     ])
     func converts(_ said: String, _ typed: String) {
         #expect(Layout.apply(said) == typed)
@@ -45,6 +55,9 @@ struct LayoutTests {
         "Strip the trailing newline.",
         "Split on newline and strip newline characters, a newline is fine.",
         "It ends with new line",
+        "Start a new line of work, add a new line to the file.",
+        "We need a blank new line here.",
+        "Add a new line.",
         "A new, line of code.",
     ])
     func leavesProse(_ said: String) {

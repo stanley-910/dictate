@@ -268,13 +268,16 @@ security delete-identity -c dictate-dev                                 # if you
   `codeNotation`. "bullet sort, next bullet scan" -> `- Sort` and `- Scan`
   on their own lines ("bullet", "new bullet", "next bullet", "bullet
   point"); "number 1 sort, number 2 scan" -> `1. Sort`, `2. Scan`; "new
-  line" and "new paragraph" break the line once or twice. A list needs two
+  line" and "new paragraph" break the line once or twice ("new line, new
+  line" leaves a blank line; at the very end the text ends with the
+  break), and the commas and periods the model puts around them go. A
+  list needs two
   items or more, numbered from 1, and ends at "new paragraph" or the end;
   text before it gets a colon, items drop their period and, unless `casing`
   is "lower", start with a capital. A word before or after that makes the
   trigger a noun leaves it alone: "the next bullet in the list", "bullet
-  points are", "the number one reason", "a new line", "new line character",
-  "the trailing newline".
+  points are", "the number one reason", "a new line", "start a new line of
+  work", "new line character", "the trailing newline".
 - Menu bar > Dictionary (Cmd-D while the menu is open) edits `dictionary`
   in a window, one term per line; Save writes the config file (keys come
   out sorted and pretty-printed, a symlinked file stays a link).

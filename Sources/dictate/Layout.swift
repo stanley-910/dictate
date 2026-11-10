@@ -17,7 +17,7 @@ enum Layout {
         "his", "her", "its", "per", "of", "on", "in", "with", "without", "by", "for", "to", "no", "any",
         "which", "first", "last", "add", "adds", "insert", "inserts", "start", "starts", "print", "prints",
         "begin", "use", "uses", "need", "needs", "put", "puts", "emit", "emits", "write", "writes",
-        "trailing", "strip", "strips", "trim", "trims", "remove", "removes", "split", "splits", "escape",
+        "trailing", "blank", "empty", "extra", "single", "double", "strip", "strips", "trim", "trims", "remove", "removes", "split", "splits", "escape",
     ]
     /// Words after a trigger that make it a noun: "bullet points are",
     /// "new line character", "number 1 is speed".
@@ -125,7 +125,8 @@ enum Layout {
         // "bullet point" is the same trigger.
         if t.kind == .bullet, at(t.length) == "point", words[i + t.length - 1].last?.isLetter == true { t.length += 1 }
         // Something must follow, and not a word that makes it a noun.
-        guard let follow = at(t.length) else { return nil }
+        // A new line may end the text, so the next dictation starts on its own line.
+        guard let follow = at(t.length) else { return t.kind == .line || t.kind == .paragraph ? t : nil }
         let last = words[i + t.length - 1].last!
         if last.isLetter || last.isNumber, after.contains(follow) { return nil }
         return t
