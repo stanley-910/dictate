@@ -26,7 +26,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private enum Job {
         /// A recording just stopped, with the modifiers held and the app
         /// frontmost as it stopped.
-        case dictation(stopFlags: CGEventFlags, target: NSRunningApplication?)
+        case dictation(stopFlags: CGEventFlags, target: NSRunningApplication?, pastedByHand: Int)
         /// A saved recording decoded again from the menu; its text is copied.
         case saved(Recovery.Take)
     }
@@ -151,8 +151,9 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let l = HotkeyListener(hotkeys: hotkeys) { [weak self] event in
             DispatchQueue.main.async { self?.handle(event) }
         }
-        l.onPasteKey = { flags in
+        l.onPasteKey = { [weak self] flags in
             DispatchQueue.main.async {
+                guard self?.recording == true else { return }
                 // Ctrl-V pastes only in a terminal (an image into Claude Code).
                 let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
                 guard flags.contains(.maskCommand) || PasteTarget.terminals.contains(front) else { return }
@@ -241,6 +242,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         recording = true
+        _ = ClipboardHistory.shared.takePastedByHand()
         setIcon("●", color: .systemRed)
         if config.indicator {
             indicator.position = config.indicatorPosition
@@ -340,7 +342,8 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         let target = NSWorkspace.shared.frontmostApplication
-        let ticket = deliveries.add(.dictation(stopFlags: stopFlags, target: target))
+        let ticket = deliveries.add(.dictation(stopFlags: stopFlags, target: target,
+                                                      pastedByHand: ClipboardHistory.shared.takePastedByHand()))
         showState()
         playSound(config.soundPack.stop)
         let input = dictation.inputName
@@ -385,7 +388,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func deliver(_ job: Job, _ result: Result<String, Error>) {
         heardNothing = false
         switch (job, result) {
-        case (.dictation(let stopFlags, let target), .success(var text)):
+        case (.dictation(let stopFlags, let target, let pastedByHand), .success(var text)):
             if text.isEmpty {
                 // Silence, or speech too quiet for the gate: say so rather
                 // than leave the user waiting for text that is not coming.
@@ -403,7 +406,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if delivery != chosen {
                 // Focus is not moved back: the user went somewhere on purpose.
                 // The clipboard holds one thing: the text, without any images.
-                text = ClipboardHistory.text(ClipboardHistory.shared.fill(text, order: config.pasteOrder))
+                text = ClipboardHistory.text(ClipboardHistory.shared.fill(text, order: config.pasteOrder, pastedByHand: pastedByHand))
                 if text.isEmpty { return }
                 if config.trailingSpace { text += " " }
                 Paster.copy(text)
@@ -421,7 +424,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 text = CursorText.fit(text, after: before, terms: config.dictionary, isWord: CursorText.isKnownWord)
             }
             // After the fit, so a pasted copy keeps its own casing.
-            var parts = ClipboardHistory.shared.fill(text, order: config.pasteOrder)
+            var parts = ClipboardHistory.shared.fill(text, order: config.pasteOrder, pastedByHand: pastedByHand)
             if parts.isEmpty { return }
             if config.trailingSpace {
                 if case .text(let last) = parts[parts.count - 1] { parts[parts.count - 1] = .text(last + " ") }

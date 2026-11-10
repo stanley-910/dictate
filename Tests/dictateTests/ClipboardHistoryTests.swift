@@ -71,12 +71,12 @@ struct PasteTests {
 
     @Test func aPasteByHandMovesTheSpokenPasteDownACopy() {
         let history = ClipboardHistory(items: [.text("newest"), .text("older"), .text("oldest")])
-        #expect(history.remaining.first == .text("newest"))
+        #expect(history.remaining(after: history.takePastedByHand()).first == .text("newest"))
         history.pastedByUser()
-        #expect(history.remaining == [.text("older"), .text("oldest")])
-        history.pastedByUser()
-        history.pastedByUser()
-        history.pastedByUser()
-        #expect(history.remaining.isEmpty)
+        #expect(history.remaining(after: history.takePastedByHand()) == [.text("older"), .text("oldest")])
+        // Taken: the next recording starts from the top again.
+        #expect(history.takePastedByHand() == 0)
+        for _ in 0..<4 { history.pastedByUser() }
+        #expect(history.remaining(after: history.takePastedByHand()).isEmpty)
     }
 }

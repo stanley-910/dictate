@@ -35,8 +35,9 @@ final class ClipboardHistory {
 
     /// Newest first.
     private(set) var items: [Item] = []
-    /// Pastes the user made by hand since the newest copy: each one moves
-    /// the spoken "paste" a copy down, as that copy is already in place.
+    /// Pastes the user made by hand during the recording in progress, since
+    /// the newest copy: each one moves that recording's spoken "paste" a
+    /// copy down, as that copy is already in place.
     private(set) var pastedByHand = 0
 
     init(items: [Item] = []) { self.items = items }
@@ -47,8 +48,16 @@ final class ClipboardHistory {
         pastedByHand += 1
     }
 
-    /// The copies a spoken "paste" draws on, newest first.
-    var remaining: [Item] { Array(items.dropFirst(pastedByHand)) }
+    /// The count so far, starting over: called when a recording starts
+    /// (dropping what came before it) and when it stops (for its delivery).
+    func takePastedByHand() -> Int {
+        defer { pastedByHand = 0 }
+        return pastedByHand
+    }
+
+    /// The copies a spoken "paste" draws on, newest first, for a recording
+    /// with `pasted` pastes by hand in it.
+    func remaining(after pasted: Int) -> [Item] { Array(items.dropFirst(pasted)) }
     private var seen = NSPasteboard.general.changeCount
     private var timer: Timer?
 
@@ -103,11 +112,11 @@ final class ClipboardHistory {
     }
 
     /// `text` with each placeholder replaced by a copy from the history.
-    func fill(_ text: String, order: Order) -> [Part] {
+    func fill(_ text: String, order: Order, pastedByHand: Int = 0) -> [Part] {
         check()
         let count = text.components(separatedBy: Self.placeholder).count - 1
         guard count > 0 else { return text.isEmpty ? [] : [.text(text)] }
-        let items = remaining
+        let items = remaining(after: pastedByHand)
         let kinds = items.prefix(count).map { if case .text = $0 { return "text" } else { return "image or file" } }
         log("paste: \(count) command(s), \(items.count) item(s) in history after \(pastedByHand) pasted by hand; newest first: \(kinds.joined(separator: ", "))")
         return Self.fill(text, history: items, order: order)
