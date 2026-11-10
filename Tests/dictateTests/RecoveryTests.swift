@@ -80,6 +80,15 @@ import Testing
         #expect(Recovery.recent().count == 1)
     }
 
+    @Test func noTextForAPrunedRecording() {
+        let t = Self.take(10)
+        t.saveAudio([0.1], done: true)
+        t.delete()
+        t.saveText("late")
+        Recovery.flush()
+        #expect(!FileManager.default.fileExists(atPath: t.textURL.path))
+    }
+
     @Test func neverOverwritesAnOldLastRecording() throws {
         try FileManager.default.createDirectory(at: Recovery.directory, withIntermediateDirectories: true)
         try Wav.write16k([Float](repeating: 0.1, count: 500), to: Recovery.audioURL)

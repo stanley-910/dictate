@@ -103,7 +103,9 @@ security delete-identity -c dictate-dev                                 # if you
 ## Use
 
 - Hotkey (default Control+Space) starts recording; the menu bar dot turns red.
-- Same hotkey stops, transcribes, and pastes.
+- Same hotkey stops, transcribes, and pastes. The next recording can start
+  while the last is still decoding; transcripts land in the order their
+  recordings stopped, pasted wherever the cursor is then, even mid-recording.
 - Escape while recording cancels and never reaches the frontmost app. Past
   `cancelConfirmAfterSeconds` (default 10) the first Escape only arms (dot
   turns yellow); a second within 2 s cancels. Set 0 for single-press.
@@ -148,6 +150,7 @@ security delete-identity -c dictate-dev                                 # if you
   `restoreClipboard: false` leaves the transcript on the clipboard after
   pasting; with it on, `restoreClipboardAfterSeconds` (0.25) is how long the
   transcript stays there first, so a clipboard history manager can catch it.
+  Anything copied during that wait is left in place.
   `casing` is `model` (as transcribed), `lower` (everything lowercase;
   dictionary terms keep their casing) or `sentence` (first letter uppercased).
   `endPeriod: false` drops the period that ends the transcript; periods inside

@@ -129,8 +129,11 @@ enum Recovery {
             }
         }
 
+        /// Skipped once the audio is gone: a recording pruned while it was
+        /// still decoding (the next one started meanwhile) leaves no stray text.
         func saveText(_ text: String) {
             write {
+                guard FileManager.default.fileExists(atPath: audioURL.path) else { return }
                 try Data(text.utf8).write(to: textURL, options: [.atomic])
                 try lock(textURL)
                 try link(textURL, as: Recovery.textURL)

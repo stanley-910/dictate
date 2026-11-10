@@ -15,7 +15,19 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let cheatMenu = NSMenu(title: "Cheat Sheet")
     private let recentMenu = NSMenu(title: "Recent Recordings")
     private let dictionaryWindow = DictionaryWindow()
-    private var state: State = .idle
+    /// Written on main; the tap's thread reads it too.
+    private var recording = false
+    /// Stopped recordings still decoding. A new recording can start meanwhile;
+    /// their text is delivered in the order they stopped.
+    private var deliveries = DeliveryQueue<Job, Result<String, Error>>()
+    private var state: State { recording ? .recording : deliveries.isEmpty ? .idle : .transcribing }
+
+    private enum Job {
+        /// A recording just stopped, with the modifiers held as it stopped.
+        case dictation(stopFlags: CGEventFlags)
+        /// A saved recording decoded again from the menu; its text is copied.
+        case saved(Recovery.Take)
+    }
     private var maxTimer: Timer?
     private var warnTimer: Timer?
     /// Inside `maximumWarnSeconds` of the safety stop.
@@ -24,8 +36,6 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var configModified: Date?
     /// Index of the hotkey that started the current recording.
     private var activeHotkey = 0
-    /// Modifiers held when the recording was stopped.
-    private var stopFlags: CGEventFlags = []
     private var pressedAt: Date?
     /// `config.deliveryModifierFlags`, kept apart for the tap's thread.
     private var deliveryFlags: CGEventFlags = []
@@ -96,12 +106,12 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async { self?.handle(event) }
         }
         l.capturesEscape = { [weak self] in
-            // Read on the tap's thread; `state` is only written on main, and a
+            // Read on the tap's thread; `recording` is only written on main, and a
             // stale read here costs at most one Escape passing through.
-            self?.state == .recording
+            self?.recording == true
         }
         l.toleratedModifiers = { [weak self] in
-            guard let self, self.state == .recording else { return [] }
+            guard let self, self.recording else { return [] }
             return self.deliveryFlags
         }
         do {
@@ -134,22 +144,20 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func handle(_ event: HotkeyListener.Event) {
         switch event {
         case .escape:
-            if state == .recording { escapePressed() }
+            if recording { escapePressed() }
         case .pressed(let i):
             let mode: Config.Mode = i == 0 ? config.mode : .hold
-            switch (mode, state) {
-            case (.toggle, .idle), (.hold, .idle):
+            // Earlier recordings still decoding do not hold up the next one.
+            if !recording {
                 pressedAt = Date()
                 activeHotkey = i
                 startRecording()
-            case (.toggle, .recording) where activeHotkey == i:
+            } else if mode == .toggle, activeHotkey == i {
                 stopAndTranscribe()
-            default:
-                break
             }
         case .released(let i):
             let mode: Config.Mode = i == 0 ? config.mode : .hold
-            if mode == .hold, state == .recording, activeHotkey == i { stopAndTranscribe() }
+            if mode == .hold, recording, activeHotkey == i { stopAndTranscribe() }
         }
     }
 
@@ -161,7 +169,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             beep()
             return
         }
-        state = .recording
+        recording = true
         setIcon("●", color: .systemRed)
         if config.indicator {
             indicator.position = config.indicatorPosition
@@ -179,7 +187,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let warnAt = config.maximumSeconds - config.maximumWarnSeconds
         if config.maximumWarnSeconds > 0, warnAt > 0 {
             warnTimer = Timer.scheduledTimer(withTimeInterval: warnAt, repeats: false) { [weak self] _ in
-                guard let self, self.state == .recording else { return }
+                guard let self, self.recording else { return }
                 log("\(Int(self.config.maximumWarnSeconds)) s to maximumSeconds")
                 self.nearMaximum = true
                 self.playSound(self.config.soundPack.warn)
@@ -216,7 +224,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         playSound(config.soundPack.arm)
         cancelArmTimer?.invalidate()
         cancelArmTimer = Timer.scheduledTimer(withTimeInterval: confirmWindow, repeats: false) { [weak self] _ in
-            guard let self, self.state == .recording else { return }
+            guard let self, self.recording else { return }
             self.cancelArmed = false
             self.setIcon("●", color: self.nearMaximum ? .systemPurple : .systemRed)
             self.indicator.mode = self.nearMaximum ? .ending : .recording
@@ -232,43 +240,60 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         disarmCancel()
         stopTimers()
         _ = dictation.stop()
-        state = .idle
-        setIcon("○")
-        indicator.hide()
+        recording = false
+        showState()
         playSound(config.soundPack.cancel)
         log("cancelled")
     }
 
     private func stopAndTranscribe() {
-        guard state == .recording else { return }
+        guard recording else { return }
         disarmCancel()
         stopTimers()
         let (pcm, seconds) = dictation.stop()
-        stopFlags = listener?.lastFlags ?? []
+        recording = false
+        let stopFlags = listener?.lastFlags ?? []
         if dictation.isTooShort(seconds) {
-            state = .idle
-            setIcon("○")
-            indicator.hide()
+            showState()
             return
         }
-        state = .transcribing
-        setIcon("◐", color: .systemOrange)
-        indicator.mode = .transcribing
+        let ticket = deliveries.add(.dictation(stopFlags: stopFlags))
+        showState()
         playSound(config.soundPack.stop)
         dictation.text(from: pcm, recording: true) { [weak self] result in
-            DispatchQueue.main.async { self?.finish(result) }
+            DispatchQueue.main.async { self?.finished(ticket, result) }
         }
     }
 
-    private func finish(_ result: Result<String, Error>) {
-        state = .idle
-        setIcon("○")
-        indicator.hide()
-        switch result {
-        case .success(var text):
+    /// The icon and pill for the state after a stop, cancel or delivery. A
+    /// recording keeps its own colours, set where they change.
+    private func showState() {
+        switch state {
+        case .recording:
+            break
+        case .transcribing:
+            setIcon("◐", color: .systemOrange)
+            indicator.mode = .transcribing
+        case .idle:
+            setIcon("○")
+            indicator.hide()
+        }
+    }
+
+    private func finished(_ ticket: Int, _ result: Result<String, Error>) {
+        for (job, result) in deliveries.finish(ticket, result) { deliver(job, result) }
+        showState()
+    }
+
+    private func deliver(_ job: Job, _ result: Result<String, Error>) {
+        switch (job, result) {
+        case (.dictation(let stopFlags), .success(var text)):
             if text.isEmpty { return }
             if config.trailingSpace { text += " " }
-            let held = CGEventSource.flagsState(.combinedSessionState).union(listener?.lastFlags ?? []).union(stopFlags)
+            // While the next recording runs, the modifiers held are its own
+            // (a hold key, a delivery pick for it): only the stop's count.
+            let held = recording ? stopFlags
+                : CGEventSource.flagsState(.combinedSessionState).union(listener?.lastFlags ?? []).union(stopFlags)
             switch config.delivery(for: held) {
             case .paste:
                 Paster.paste(text, restoreClipboard: config.restoreClipboard, restoreAfter: config.restoreClipboardAfterSeconds)
@@ -279,7 +304,12 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 Paster.paste(text, restoreClipboard: config.restoreClipboard, restoreAfter: config.restoreClipboardAfterSeconds, thenReturn: true)
                 log("sent")
             }
-        case .failure(let error):
+        case (.saved(let take), .success(let text)):
+            take.saveText(text)
+            Paster.copy(text)
+            playSound(config.soundPack.stop)
+            log("copied recording \(take.id)")
+        case (_, .failure(let error)):
             log("transcribe failed: \(error)")
             beep()
         }
@@ -425,30 +455,16 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func retranscribe(_ take: Recovery.Take) {
-        guard state == .idle else { return beep() }
+        guard !recording else { return beep() }
         let pcm: [Float]
         do { pcm = try Wav.readMono16k(take.audioURL) } catch {
             log("could not read recording \(take.id): \(error)")
             return beep()
         }
-        state = .transcribing
-        setIcon("◐", color: .systemOrange)
+        let ticket = deliveries.add(.saved(take))
+        showState()
         dictation.text(from: pcm) { [weak self] result in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.state = .idle
-                self.setIcon("○")
-                switch result {
-                case .success(let text):
-                    take.saveText(text)
-                    Paster.copy(text)
-                    self.playSound(self.config.soundPack.stop)
-                    log("copied recording \(take.id)")
-                case .failure(let error):
-                    log("transcribe failed: \(error)")
-                    self.beep()
-                }
-            }
+            DispatchQueue.main.async { self?.finished(ticket, result) }
         }
     }
 

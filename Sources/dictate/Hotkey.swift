@@ -146,6 +146,11 @@ final class HotkeyListener {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return Unmanaged.passUnretained(event)
         }
+        // Our own Cmd-V, pasting an earlier transcript while recording: not
+        // the user's modifiers, not a key they pressed.
+        if event.getIntegerValueField(.eventSourceUserData) == Paster.eventMarker {
+            return Unmanaged.passUnretained(event)
+        }
         let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
         lastFlags = event.flags
 
