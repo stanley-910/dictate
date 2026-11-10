@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 
 /// The daemon: hotkey -> record -> transcribe -> paste, with a menu bar dot.
@@ -72,6 +73,40 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         reloadTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.reloadIfChanged()
         }
+        secureTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            self?.checkSecureInput()
+        }
+    }
+
+    /// Secure input (a password field, Terminal's Secure Keyboard Entry) is
+    /// on: keys never reach the event tap, so the hotkey is dead until it is
+    /// off. The idle dot dims so that is not a mystery.
+    private var secureInput = false
+    private var secureTimer: Timer?
+
+    private func checkSecureInput() {
+        let on = IsSecureEventInputEnabled()
+        guard on != secureInput else { return }
+        secureInput = on
+        if on {
+            let holder = (CGSessionCopyCurrentDictionary() as? [String: Any]).flatMap(Self.secureInputHolder)
+                .flatMap { NSRunningApplication(processIdentifier: $0)?.localizedName }
+            log("secure input on\(holder.map { " (\($0))" } ?? ""); the hotkey is blocked until it is off")
+        } else {
+            log("secure input off")
+        }
+        statusItem?.button?.toolTip = on ? "Secure input on" : nil
+        if state == .idle, listener != nil { setIdleIcon() }
+    }
+
+    /// The process holding secure input, from the session dictionary
+    /// (an undocumented key; nil when absent).
+    static func secureInputHolder(_ session: [String: Any]) -> pid_t? {
+        (session["kCGSSessionSecureInputPID"] as? NSNumber).map { pid_t($0.int32Value) }
+    }
+
+    private func setIdleIcon() {
+        setIcon("○", color: secureInput ? .tertiaryLabelColor : .labelColor)
     }
 
     /// Hotkeys from config; index 0 follows `mode`, index 1 is always hold.
@@ -139,7 +174,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         listener = l
-        setIcon("○")
+        setIdleIcon()
         let hold = config.holdHotkey.map { ", hold \($0)" } ?? ""
         log("ready: \(config.hotkey) (\(config.mode.rawValue))\(hold), model \(config.modelURL.lastPathComponent)")
     }
@@ -319,7 +354,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             setIcon("◐", color: .systemOrange)
             indicator.mode = .transcribing
         case .idle:
-            setIcon("○")
+            setIdleIcon()
             guard heardNothing else { return indicator.hide() }
             heardNothing = false
             indicator.mode = .nothing

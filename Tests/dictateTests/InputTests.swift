@@ -297,3 +297,10 @@ struct MicChoiceTests {
                                     output: Self.podsOut, preferBuiltIn: true) == Self.podsIn)
     }
 }
+
+struct SecureInputTests {
+    @Test func namesTheHolder() {
+        #expect(DictateApp.secureInputHolder(["kCGSSessionSecureInputPID": NSNumber(value: 412)]) == 412)
+        #expect(DictateApp.secureInputHolder(["kCGSSessionOnConsoleKey": true]) == nil)
+    }
+}

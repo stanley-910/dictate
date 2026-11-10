@@ -109,6 +109,9 @@ security delete-identity -c dictate-dev                                 # if you
 - Or hold the hotkey to talk: held past `holdToTalkAfterSeconds` (default
   0.4), letting go stops. A quicker tap toggles as above; 0 turns holding off.
   A lone-modifier toggle key (below) only taps.
+- While another app has secure input on (a password field, Terminal's
+  Secure Keyboard Entry), macOS hides every key from the hotkey tap. The
+  idle dot dims, its tooltip says so, and the log names the app holding it.
 - Escape while recording cancels and never reaches the frontmost app. Past
   `cancelConfirmAfterSeconds` (default 10) the first Escape only arms (dot
   turns yellow); a second within 2 s cancels. Set 0 for single-press.
