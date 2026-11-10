@@ -53,6 +53,11 @@ final class Dictation {
         }
     }
 
+    /// Whether the recording in progress has speech in it yet.
+    var heardSpeech: Bool {
+        Silence.speechSeconds(recorder.recorded(from: 0), rate: Int(Recorder.targetRate)) >= Silence.minSpeechSeconds
+    }
+
     /// Separate from `start` so the daemon's start sound is not muted.
     func muteSpeakersIfConfigured() {
         if config.muteSpeakersWhileRecording { mute.engage() }

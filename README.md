@@ -107,7 +107,8 @@ security delete-identity -c dictate-dev                                 # if you
   while the last is still decoding; transcripts land in the order their
   recordings stopped, pasted wherever the cursor is then, even mid-recording.
 - Or hold the hotkey to talk: held past `holdToTalkAfterSeconds` (default
-  0.4), letting go stops. A quicker tap toggles as above; 0 turns holding off.
+  0.4), letting go stops. A quicker tap toggles as above, and so does a
+  slower press with nothing said in it (up to 2 s); 0 turns holding off.
   A lone-modifier toggle key (below) only taps.
 - While another app has secure input on (a password field, Terminal's
   Secure Keyboard Entry), macOS hides every key from the hotkey tap. The

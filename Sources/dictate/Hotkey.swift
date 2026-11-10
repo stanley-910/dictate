@@ -94,12 +94,22 @@ final class HotkeyListener {
     var onPasteKey: ((CGEventFlags) -> Void)?
     private var lone: [LoneModifier]
     private var keyDown: [Bool]
+    private var downAt: [Date?]
+    /// How long each hotkey had been down at its last release or chord,
+    /// timed here as the keys arrive: the handler may run late.
+    private(set) var held: [TimeInterval]
 
     init(hotkeys: [Hotkey], handler: @escaping (Event) -> Void) {
         self.hotkeys = hotkeys
         self.handler = handler
         lone = Array(repeating: LoneModifier(), count: hotkeys.count)
         keyDown = Array(repeating: false, count: hotkeys.count)
+        downAt = Array(repeating: nil, count: hotkeys.count)
+        held = Array(repeating: 0, count: hotkeys.count)
+    }
+
+    private func time(_ i: Int) {
+        held[i] = downAt[i].map { Date().timeIntervalSince($0) } ?? 0
     }
 
     func stop() {
@@ -184,8 +194,12 @@ final class HotkeyListener {
             if let lone = hotkey.loneModifierKeyCode {
                 guard type == .flagsChanged, code == lone else { continue }
                 switch self.lone[i].modifier(isDown: isModifierDown(code: lone, flags: event.flags)) {
-                case .pressed: handler(.pressed(i))
-                case .released(let clean): handler(.released(i, clean: clean))
+                case .pressed:
+                    downAt[i] = Date()
+                    handler(.pressed(i))
+                case .released(let clean):
+                    time(i)
+                    handler(.released(i, clean: clean))
                 case .chorded, nil: break
                 }
                 return Unmanaged.passUnretained(event)
@@ -198,10 +212,12 @@ final class HotkeyListener {
             case .keyDown:
                 if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return nil }
                 keyDown[i] = true
+                downAt[i] = Date()
                 handler(.pressed(i))
                 return nil
             case .keyUp:
                 keyDown[i] = false
+                time(i)
                 handler(.released(i, clean: true))
                 return nil
             default:
@@ -220,7 +236,10 @@ final class HotkeyListener {
 
     /// Another key or a click: a lone modifier held now is part of a shortcut.
     private func chord() {
-        for i in lone.indices where lone[i].otherInput() != nil { handler(.chorded(i)) }
+        for i in lone.indices where lone[i].otherInput() != nil {
+            time(i)
+            handler(.chorded(i))
+        }
     }
 
     private func isModifierDown(code: CGKeyCode, flags: CGEventFlags) -> Bool {

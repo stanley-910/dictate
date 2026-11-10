@@ -103,8 +103,8 @@ struct TriggerTests {
     }
     static func up(held: Double) -> T.State { T.State(heldSeconds: held) }
     static let tapOrHold = T.Key(mode: .toggle, holdAfterSeconds: 0.4)
-    static func pressed(held: Double, started: Bool = true) -> T.State {
-        T.State(recording: true, ownsRecording: true, heldSeconds: held, pressStarted: started)
+    static func pressed(held: Double, started: Bool = true, speech: Bool = true) -> T.State {
+        T.State(recording: true, ownsRecording: true, heldSeconds: held, pressStarted: started, heardSpeech: speech)
     }
 
     @Test(arguments: [
@@ -137,6 +137,9 @@ struct TriggerTests {
         (.release(clean: true), tapOrHold, pressed(held: 0.15), .none),
         (.release(clean: true), tapOrHold, pressed(held: 0.4), .stop),
         (.release(clean: true), tapOrHold, pressed(held: 5), .stop),
+        // A slow press with nothing said is a tap, not push-to-talk; a long silent hold still stops.
+        (.release(clean: true), tapOrHold, pressed(held: 0.8, speech: false), .none),
+        (.release(clean: true), tapOrHold, pressed(held: 2.5, speech: false), .stop),
         // The release after a press that stopped (or a lone tap that started) is idle.
         (.release(clean: true), tapOrHold, pressed(held: 5, started: false), .none),
         (.release(clean: true), tapOrHold, up(held: 5), .none),

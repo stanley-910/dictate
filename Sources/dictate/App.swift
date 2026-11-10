@@ -41,7 +41,6 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The bound hotkeys, as the listener has them.
     private var hotkeys: [Hotkey] = []
     /// When each hotkey last went down, by index.
-    private var pressedAt: [Int: Date] = [:]
     /// The recording was started by a press (not a lone key's release), so
     /// holding that press past `holdToTalkAfterSeconds` makes it push-to-talk.
     private var pressStarted = false
@@ -201,7 +200,6 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .escape:
             if recording { escapePressed() }
         case .pressed(let i):
-            pressedAt[i] = Date()
             act(.press, key: i)
         case .released(let i, let clean):
             act(.release(clean: clean), key: i)
@@ -216,9 +214,11 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard i < hotkeys.count else { return }
         let key = Trigger.Key(mode: i == 0 ? config.mode : .hold, lone: hotkeys[i].loneModifierKeyCode != nil,
                               holdAfterSeconds: config.holdToTalkAfterSeconds)
-        let held = pressedAt[i].map { Date().timeIntervalSince($0) } ?? 0
-        let now = Trigger.State(recording: recording, ownsRecording: activeHotkey == i, heldSeconds: held,
+        // Timed at the tap: by now starting the recording has taken its while.
+        let held = event == .press ? 0 : listener.map { i < $0.held.count ? $0.held[i] : 0 } ?? 0
+        var now = Trigger.State(recording: recording, ownsRecording: activeHotkey == i, heldSeconds: held,
                                 pressStarted: pressStarted)
+        if case .release = event, recording, pressStarted { now.heardSpeech = dictation.heardSpeech }
         switch Trigger.action(event, key: key, state: now) {
         case .start:
             activeHotkey = i
@@ -234,6 +234,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func startRecording() {
+        let t0 = Date()
         do {
             try dictation.start()
         } catch {
@@ -241,6 +242,8 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             beep()
             return
         }
+        let ms = Int(Date().timeIntervalSince(t0) * 1000)
+        if ms >= 100 { log("recording took \(ms) ms to start") }
         recording = true
         _ = ClipboardHistory.shared.takePastedByHand()
         setIcon("●", color: .systemRed)
@@ -419,7 +422,11 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // Where the app does not say (most terminals), what we pasted
                 // there last is still before the cursor if nothing was typed
                 // or clicked since.
-                let before = CursorText.beforeCursor()
+                let t0 = Date()
+                let read = CursorText.beforeCursor()
+                let ms = Int(Date().timeIntervalSince(t0) * 1000)
+                if ms >= 50 { log("reading the text before the cursor took \(ms) ms in \(front?.localizedName ?? "?")") }
+                let before = read
                     ?? lastPaste.flatMap { $0.pid == front?.processIdentifier && $0.typed == typed ? $0.text : nil }
                 text = CursorText.fit(text, after: before, terms: config.dictionary, isWord: CursorText.isKnownWord)
             }

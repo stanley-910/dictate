@@ -52,6 +52,8 @@ enum Trigger {
         /// This key's latest press started the recording (not a release, and
         /// not an earlier press: the release after a stopping press is idle).
         var pressStarted = false
+        /// The recording has speech in it so far.
+        var heardSpeech = true
     }
 
     /// A lone-modifier toggle key acts on a release this soon after its
@@ -62,6 +64,10 @@ enum Trigger {
     /// shortcut: the recording it started is discarded without a sound. Later
     /// the key is being held to talk and a stray key is ignored.
     static let chordSeconds = 1.0
+    /// A toggle key held this long stops on release even with nothing said.
+    /// Held for less in silence it was a slow press, not push-to-talk, and
+    /// the recording goes on.
+    static let silentHoldSeconds = 2.0
 
     static func action(_ event: Event, key: Key, state s: State) -> Action {
         switch (event, key.mode) {
@@ -78,6 +84,7 @@ enum Trigger {
         case (.release, .toggle):
             // Tapped: recording goes on until the next press. Held: let go to stop.
             let held = key.holdAfterSeconds > 0 && s.heldSeconds >= key.holdAfterSeconds
+                && (s.heardSpeech || s.heldSeconds >= silentHoldSeconds)
             return held && s.recording && s.ownsRecording && s.pressStarted ? .stop : .none
         case (.release, .hold):
             return s.recording && s.ownsRecording ? .stop : .none
