@@ -14,6 +14,9 @@ enum Silence {
     static let overFloor: Float = 2
     /// Floor for the threshold when the room reads as digital silence.
     static let minimumRMS: Float = 0.002
+    /// Crossfade where a pause is shortened. Equal-power: both ends are
+    /// room noise, unrelated, so the level holds through the join.
+    static let fadeSeconds = 0.015
 
     /// `pcm` with every quiet run longer than `maxPause` seconds cut down to
     /// `maxPause`, half kept at each end. `maxPause` 0 returns it unchanged.
@@ -26,6 +29,7 @@ enum Silence {
         let levels = Silence.levels(pcm[...], frame: frame)
         let threshold = threshold ?? Silence.threshold(levels[...])
 
+        let fade = Int(fadeSeconds * Double(rate))
         let keepHead = maxFrames / 2
         let keepTail = maxFrames - keepHead
         var out: [Float] = []
@@ -37,8 +41,17 @@ enum Silence {
             var end = f
             while end < frames && levels[end] <= threshold { end += 1 }
             if end - f > maxFrames {
-                out.append(contentsOf: pcm[copied..<((f + keepHead) * frame)])
-                copied = (end - keepTail) * frame
+                // Blend across the join rather than butt the two ends: a step
+                // in the room noise is a click, and the model hears a break.
+                // Centred on the cut, so the length is what a hard cut gives.
+                let out1 = (f + keepHead) * frame, in2 = (end - keepTail) * frame
+                let half = min(fade / 2, out1 - copied, pcm.count - in2)
+                out.append(contentsOf: pcm[copied..<(out1 - half)])
+                for k in 0..<(2 * half) {
+                    let w = (Float(k) + 0.5) / Float(2 * half) * .pi / 2
+                    out.append(pcm[out1 - half + k] * cos(w) + pcm[in2 - half + k] * sin(w))
+                }
+                copied = in2 + half
             }
             f = end
         }

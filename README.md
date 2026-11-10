@@ -157,8 +157,10 @@ security delete-identity -c dictate-dev                                 # if you
   Recording decodes the audio again and copies the result; Recent Recordings
   copies an older one's text (hold Option to decode it again). 0 keeps none.
 - Pauses longer than `maxPauseSeconds` (default 0.6) are shortened to it before
-  decoding, since the model spends as long on silence as on speech. The log
-  line shows how much audio was left. Set 0 to keep every pause.
+  decoding, since the model spends as long on silence as on speech. The two
+  ends of a shortened pause are blended over 15 ms so the join does not
+  click. The log line shows how much audio was left. Set 0 to keep every
+  pause.
 - `mode: "hold"` records only while the key is held. `holdHotkey` adds a
   second key that is always push-to-talk, e.g. `"right_command"` or `"fn"`,
   alongside the toggle key.

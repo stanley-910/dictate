@@ -146,6 +146,18 @@ struct AudioTests {
         #expect(chunker.probeReach(side, threshold: 0.01, complete: true) == side.count)
     }
 
+    @Test func squeezeJoinsWithoutAClick() {
+        // The room hums at one level before the cut and another after: butted
+        // together that is a 0.003 step; blended over 15 ms it is a slope.
+        let hum = { (seconds: Double, level: Float) in [Float](repeating: level, count: Int(seconds * Double(Self.rate))) }
+        let pcm = Self.tone(1, amplitude: 0.1) + hum(3, 0.0015) + hum(3, -0.0015) + Self.tone(1, amplitude: 0.1)
+        let out = Silence.squeeze(pcm, maxPause: 1, rate: Self.rate)
+        #expect(abs(out.count - 3 * Self.rate) <= 320)
+        let pause = out[(Self.rate + 10)..<(2 * Self.rate - 10)]
+        let step = zip(pause, pause.dropFirst()).map { abs($1 - $0) }.max() ?? 1
+        #expect(step < 0.0003)
+    }
+
     @Test func squeezeShortensLongPauses() {
         let pcm = Self.tone(1, amplitude: 0.1) + [Float](repeating: 0, count: 5 * Self.rate) + Self.tone(1, amplitude: 0.1)
         let out = Silence.squeeze(pcm, maxPause: 1, rate: Self.rate)
