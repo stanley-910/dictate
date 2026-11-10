@@ -92,7 +92,8 @@ final class ClipboardHistory {
         check()
         let count = text.components(separatedBy: Self.placeholder).count - 1
         guard count > 0 else { return text.isEmpty ? [] : [.text(text)] }
-        log("paste: \(count) command(s), \(items.count) item(s) in history")
+        let kinds = items.prefix(count).map { if case .text = $0 { return "text" } else { return "image or file" } }
+        log("paste: \(count) command(s), \(items.count) item(s) in history; newest first: \(kinds.joined(separator: ", "))")
         return Self.fill(text, history: items, order: order)
     }
 
