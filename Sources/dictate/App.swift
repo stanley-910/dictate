@@ -326,7 +326,6 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch (job, result) {
         case (.dictation(let stopFlags, let target), .success(var text)):
             if text.isEmpty { return }
-            if config.trailingSpace { text += " " }
             // While the next recording runs, the modifiers held are its own
             // (a hold key, a delivery pick for it): only the stop's count.
             let held = recording ? stopFlags
@@ -336,11 +335,17 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let delivery = PasteTarget.delivery(chosen, stoppedIn: target?.processIdentifier, frontNow: front?.processIdentifier)
             if delivery != chosen {
                 // Focus is not moved back: the user went somewhere on purpose.
+                if config.trailingSpace { text += " " }
                 Paster.copy(text)
                 playSound(config.soundPack.copied)
                 log("copied: recorded for \(target?.localizedName ?? "?"), \(front?.localizedName ?? "?") is frontmost now")
                 return
             }
+            if delivery != .copy, config.cursorContext {
+                text = CursorText.fit(text, after: CursorText.beforeCursor(), terms: config.dictionary,
+                                      isWord: CursorText.isKnownWord)
+            }
+            if config.trailingSpace { text += " " }
             switch delivery {
             case .paste:
                 Paster.paste(text, restoreClipboard: config.restoreClipboard, restoreAfter: config.restoreClipboardAfterSeconds)

@@ -147,3 +147,49 @@ struct TriggerTests {
         #expect(T.action(event, key: key, state: state) == expected)
     }
 }
+
+struct CursorTextTests {
+    @Test(arguments: [
+        // Nothing known: as transcribed.
+        (nil, "Hello there.", "Hello there."),
+        // Start of a field or a line: as transcribed.
+        ("", "Hello there.", "Hello there."),
+        ("Dear Sam,\n", "Thanks for this.", "Thanks for this."),
+        // After a word: a space, and mid-sentence the first word lowercased.
+        ("I want to", "Check this.", " check this."),
+        ("I want to ", "Check this.", "check this."),
+        ("It costs 5", "Dollars.", " dollars."),
+        ("well,", "Maybe not.", " maybe not."),
+        ("(an aside)", "Then more.", " then more."),
+        ("he said \"so\"", "And left.", " and left."),
+        // After a sentence: a space, casing kept.
+        ("Done.", "Next one.", " Next one."),
+        ("Really?  ", "Yes.", "Yes."),
+        ("He said \"stop.\" ", "Then went.", "Then went."),
+        // An opening quote or paren: no space.
+        ("he said \"", "Hello.", "hello."),
+        ("see (", "Below.", "below."),
+        // Punctuation that attaches: no space.
+        ("one", ", two", ", two"),
+        ("end", ".", "."),
+        // Words that keep their capital mid-sentence.
+        ("so", "I think so.", " I think so."),
+        ("so", "I'm in.", " I'm in."),
+        ("call the", "API now.", " API now."),
+        ("written in", "JavaScript.", " JavaScript."),
+        ("open", "Neovim please.", " Neovim please."),
+        ("so", "X == 5 holds.", " X == 5 holds."),
+        ("and", "`s` is empty.", " `s` is empty."),
+        // Already lowercase: only the space.
+        ("and", "then this.", " then this."),
+    ] as [(String?, String, String)])
+    func fits(_ before: String?, _ text: String, _ expected: String) {
+        #expect(CursorText.fit(text, after: before, terms: ["Neovim"]) == expected)
+    }
+
+    @Test func properNounsTheSpellingCheckerRejectsKeepTheirCapital() {
+        let words: Set<String> = ["then", "check"]
+        #expect(CursorText.fit("Paris was nice.", after: "we saw", isWord: words.contains) == " Paris was nice.")
+        #expect(CursorText.fit("Then left.", after: "we saw it", isWord: words.contains) == " then left.")
+    }
+}

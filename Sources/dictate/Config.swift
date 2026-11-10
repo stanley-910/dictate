@@ -50,6 +50,10 @@ struct Config: Codable {
     var indicatorMargin: Double = 14
     /// Add a trailing space after pasted text.
     var trailingSpace: Bool = false
+    /// Read the text before the cursor (Accessibility) to put a space before
+    /// the transcript when it would run into a word, and lowercase its first
+    /// word mid-sentence. Apps that do not expose it get the text unchanged.
+    var cursorContext: Bool = true
     /// Cancel recordings shorter than this (seconds) instead of transcribing.
     var minimumSeconds: Double = 0.3
     /// Longest recording before it stops and transcribes on its own (seconds).
@@ -197,6 +201,7 @@ struct Config: Codable {
         indicatorPosition = try c.decodeIfPresent(IndicatorPosition.self, forKey: .indicatorPosition) ?? d.indicatorPosition
         indicatorMargin = try c.decodeIfPresent(Double.self, forKey: .indicatorMargin) ?? d.indicatorMargin
         trailingSpace = try c.decodeIfPresent(Bool.self, forKey: .trailingSpace) ?? d.trailingSpace
+        cursorContext = try c.decodeIfPresent(Bool.self, forKey: .cursorContext) ?? d.cursorContext
         minimumSeconds = try c.decodeIfPresent(Double.self, forKey: .minimumSeconds) ?? d.minimumSeconds
         maximumSeconds = try c.decodeIfPresent(Double.self, forKey: .maximumSeconds) ?? d.maximumSeconds
         maximumWarnSeconds = try c.decodeIfPresent(Double.self, forKey: .maximumWarnSeconds) ?? d.maximumWarnSeconds

@@ -171,6 +171,18 @@ security delete-identity -c dictate-dev                                 # if you
   Formal (as transcribed), Casual (no end period) or Very Casual (lowercase,
   no end period). The pick is stored in app defaults and overrides the config
   file.
+- `cursorContext` (default true) reads the text just before the cursor
+  through Accessibility before pasting. Right after a word, a digit or
+  punctuation (`,` `.` `?` `!` `;` `:` or a closing quote or bracket) the
+  transcript gets a leading space, unless it starts with punctuation itself.
+  In the middle of a sentence (the last mark before the cursor is not `.`,
+  `?`, `!`, a new line or the start of the field) its first word is
+  lowercased, except "I", acronyms and mixed case ("API", "JavaScript"),
+  dictionary terms, and code. Apps that do not expose the text (many
+  terminals, Electron apps) get the transcript as it is. A first word is
+  only lowercased when the spelling checker knows the lowercase form, so
+  "Paris" and "Monday" keep their capital; names that are also words ("Bob",
+  "Sam") do not, unless they are in `dictionary`.
 - `muteSpeakersWhileRecording: true` mutes the speakers for the recording so
   music or a call does not reach the mic, and restores them after.
 - `indicatorPosition` anchors the waveform pill: `bottom` (default), `top`,
