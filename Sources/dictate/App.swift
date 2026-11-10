@@ -371,6 +371,9 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         showState()
     }
 
+    /// The last text pasted, where, and the listener's input count then.
+    private var lastPaste: (pid: pid_t, text: String, typed: Int)?
+
     private func deliver(_ job: Job, _ result: Result<String, Error>) {
         heardNothing = false
         switch (job, result) {
@@ -400,8 +403,14 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 log("copied: recorded for \(target?.localizedName ?? "?"), \(front?.localizedName ?? "?") is frontmost now")
                 return
             }
+            let typed = listener?.inputCount ?? 0
             if delivery != .copy, config.cursorContext {
-                text = CursorText.fit(text, after: CursorText.beforeCursor(), terms: config.dictionary, isWord: CursorText.isKnownWord)
+                // Where the app does not say (most terminals), what we pasted
+                // there last is still before the cursor if nothing was typed
+                // or clicked since.
+                let before = CursorText.beforeCursor()
+                    ?? lastPaste.flatMap { $0.pid == front?.processIdentifier && $0.typed == typed ? $0.text : nil }
+                text = CursorText.fit(text, after: before, terms: config.dictionary, isWord: CursorText.isKnownWord)
             }
             // After the fit, so a pasted copy keeps its own casing.
             var parts = ClipboardHistory.shared.fill(text, order: config.pasteOrder)
@@ -409,12 +418,16 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if config.trailingSpace {
                 if case .text(let last) = parts[parts.count - 1] { parts[parts.count - 1] = .text(last + " ") }
             }
+            lastPaste = nil
             // A terminal pastes text on Cmd-V; the programs in it take an image on Ctrl-V.
             let richKey: CGEventFlags = PasteTarget.terminals.contains(front?.bundleIdentifier ?? "") ? .maskControl : .maskCommand
             switch delivery {
             case .paste:
                 Paster.paste(parts, restoreClipboard: config.restoreClipboard, restoreAfter: config.restoreClipboardAfterSeconds,
                              richKey: richKey)
+                if case .text(let last) = parts[parts.count - 1], let pid = front?.processIdentifier {
+                    lastPaste = (pid, last, typed)
+                }
             case .copy:
                 Paster.copy(ClipboardHistory.text(parts))
                 log("copied")

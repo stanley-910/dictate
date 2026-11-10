@@ -87,6 +87,9 @@ final class HotkeyListener {
     /// Modifier flags on the last key event the tap saw, i.e. what apps see
     /// after Karabiner and friends have remapped.
     private(set) var lastFlags: CGEventFlags = []
+    /// Goes up with every key or click of the user's that reaches an app, so
+    /// a caller can tell whether anything was typed since it last looked.
+    private(set) var inputCount = 0
     private var lone: [LoneModifier]
     private var keyDown: [Bool]
 
@@ -112,10 +115,8 @@ final class HotkeyListener {
         var mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
             | (1 << CGEventType.flagsChanged.rawValue)
-        // Clicks only matter while a lone modifier is held (Command-click).
-        if hotkeys.contains(where: { $0.loneModifierKeyCode != nil }) {
-            for type in [CGEventType.leftMouseDown, .rightMouseDown, .otherMouseDown] { mask |= 1 << type.rawValue }
-        }
+        // Clicks end a lone modifier's tap (Command-click) and move the cursor.
+        for type in [CGEventType.leftMouseDown, .rightMouseDown, .otherMouseDown] { mask |= 1 << type.rawValue }
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
@@ -159,6 +160,7 @@ final class HotkeyListener {
         }
         if type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown {
             chord()
+            inputCount += 1
             return Unmanaged.passUnretained(event)
         }
         let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
@@ -166,7 +168,10 @@ final class HotkeyListener {
         if type == .keyDown { chord() }
 
         if code == CGKeyCode(kVK_Escape), type == .keyDown || type == .keyUp {
-            guard capturesEscape() else { return Unmanaged.passUnretained(event) }
+            guard capturesEscape() else {
+                inputCount += 1
+                return Unmanaged.passUnretained(event)
+            }
             if type == .keyDown, event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
                 handler(.escape)
             }
@@ -201,6 +206,7 @@ final class HotkeyListener {
                 return Unmanaged.passUnretained(event)
             }
         }
+        if type == .keyDown { inputCount += 1 }
         return Unmanaged.passUnretained(event)
     }
 

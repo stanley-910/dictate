@@ -198,7 +198,9 @@ security delete-identity -c dictate-dev                                 # if you
   `?`, `!`, a new line or the start of the field) its first word is
   lowercased, except "I", acronyms and mixed case ("API", "JavaScript"),
   dictionary terms, and code. Apps that do not expose the text (many
-  terminals, Electron apps) get the transcript as it is. A first word is
+  terminals, Electron apps) get the transcript as it is, unless the last
+  thing to happen there was a paste of ours with no key or click since:
+  then that transcript is what is before the cursor. A first word is
   only lowercased when the spelling checker knows the lowercase form, so
   "Paris" and "Monday" keep their capital; names that are also words ("Bob",
   "Sam") do not, unless they are in `dictionary`.
