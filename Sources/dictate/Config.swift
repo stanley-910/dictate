@@ -22,6 +22,10 @@ struct Config: Codable {
     var unloadAfterSeconds: Double = 300
     /// Input device UID or name. The menu bar pick overrides this; nil = system default.
     var microphone: String? = nil
+    /// With no microphone picked, record from the built-in mic rather than a
+    /// Bluetooth headset that is also playing the sound, so the headset's
+    /// playback does not drop to call quality while recording.
+    var preferBuiltInMic: Bool = false
     /// Play a sound on start/stop/cancel/arm.
     var sounds: Bool = true
     /// Sound names from /System/Library/Sounds (without extension) or file paths.
@@ -192,6 +196,7 @@ struct Config: Codable {
         language = c.contains(.language) ? try c.decode(String?.self, forKey: .language) : d.language
         unloadAfterSeconds = try c.decodeIfPresent(Double.self, forKey: .unloadAfterSeconds) ?? d.unloadAfterSeconds
         microphone = try c.decodeIfPresent(String.self, forKey: .microphone)
+        preferBuiltInMic = try c.decodeIfPresent(Bool.self, forKey: .preferBuiltInMic) ?? d.preferBuiltInMic
         sounds = try c.decodeIfPresent(Bool.self, forKey: .sounds) ?? d.sounds
         soundPack = try c.decodeIfPresent(SoundPack.self, forKey: .soundPack) ?? d.soundPack
         modifiers = try c.decodeIfPresent([String: Delivery].self, forKey: .modifiers) ?? d.modifiers

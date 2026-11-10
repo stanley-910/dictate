@@ -262,3 +262,38 @@ struct DeadInputTests {
                                systemDefault: systemDefault, builtIn: builtIn) == expected)
     }
 }
+
+struct MicChoiceTests {
+    static let podsIn = AudioInputDevice(id: 7, uid: "AA-BB:input", name: "AirPods", transport: kAudioDeviceTransportTypeBluetooth)
+    static let podsOut = AudioInputDevice(id: 8, uid: "AA-BB:output", name: "AirPods", transport: kAudioDeviceTransportTypeBluetooth)
+    static let podsBoth = AudioInputDevice(id: 7, uid: "AA-BB", name: "AirPods", transport: kAudioDeviceTransportTypeBluetooth)
+    static let otherPods = AudioInputDevice(id: 9, uid: "CC-DD:output", name: "Beats", transport: kAudioDeviceTransportTypeBluetooth)
+    static let mac = DeadInputTests.mac
+    static let speakers = AudioInputDevice(id: 3, uid: "BuiltInSpeakerDevice", name: "MacBook Pro Speakers", transport: kAudioDeviceTransportTypeBuiltIn)
+    static let devices = [podsIn, mac]
+
+    @Test(arguments: [
+        // Off: the default input, as before.
+        (nil, podsIn, podsOut, false, podsIn),
+        // On, nothing picked, headset both ways: the built-in mic.
+        (nil, podsIn, podsOut, true, mac),
+        (nil, podsBoth, podsBoth, true, mac),
+        // Output elsewhere, or a different headset: leave the input alone.
+        (nil, podsIn, speakers, true, podsIn),
+        (nil, podsIn, otherPods, true, podsIn),
+        // An explicit pick wins, by UID or name.
+        ("AA-BB:input", podsIn, podsOut, true, podsIn),
+        ("AirPods", podsIn, podsOut, true, podsIn),
+        // A pick no longer connected: as if nothing was picked.
+        ("gone", podsIn, podsOut, true, mac),
+    ] as [(String?, AudioInputDevice, AudioInputDevice, Bool, AudioInputDevice)])
+    func chooses(_ picked: String?, _ input: AudioInputDevice, _ output: AudioInputDevice, _ prefer: Bool, _ expected: AudioInputDevice) {
+        #expect(AudioDevices.choose(picked: picked, devices: Self.devices + [Self.podsBoth], defaultInput: input,
+                                    output: output, preferBuiltIn: prefer) == expected)
+    }
+
+    @Test func noBuiltInMicKeepsTheHeadset() {
+        #expect(AudioDevices.choose(picked: nil, devices: [Self.podsIn], defaultInput: Self.podsIn,
+                                    output: Self.podsOut, preferBuiltIn: true) == Self.podsIn)
+    }
+}

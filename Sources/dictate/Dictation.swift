@@ -34,7 +34,7 @@ final class Dictation {
     /// after each piece, so a crash or a forced quit keeps nearly all of it.
     func start() throws {
         live = nil
-        let device = AudioDevices.resolve(configured: config.microphone)
+        let device = AudioDevices.resolve(configured: config.microphone, preferBuiltIn: config.preferBuiltInMic)
         inputName = device?.name ?? "default input"
         try recorder.start(device: device)
         transcriber.preload()

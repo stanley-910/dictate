@@ -201,6 +201,10 @@ security delete-identity -c dictate-dev                                 # if you
   (`indicator: false` hides it).
 - Microphone: menu bar > Microphone. The pick is stored in app defaults;
   `microphone` in config is the fallback when nothing is picked.
+  `preferBuiltInMic: true` records from the built-in mic instead of a
+  Bluetooth headset that is also playing the sound, so music or a call in
+  the headset does not drop to call quality while the mic is open. A pick in
+  the menu or `microphone` still wins.
 - If the input goes dead mid-recording (exact digital silence for 0.5 s
   after sound, or 3 s from the start), it is reopened up to 3 times; after
   that, or at once if the device was unplugged, the recording carries on
