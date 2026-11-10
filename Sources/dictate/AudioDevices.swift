@@ -6,6 +6,10 @@ struct AudioInputDevice: Equatable {
     let id: AudioDeviceID
     let uid: String
     let name: String
+    /// `kAudioDeviceTransportType…`: built-in, Bluetooth, USB and so on.
+    var transport: UInt32 = 0
+
+    var isBuiltIn: Bool { transport == kAudioDeviceTransportTypeBuiltIn }
 }
 
 enum AudioDevices {
@@ -38,8 +42,24 @@ enum AudioDevices {
                   // the default input; it is ours and not a real choice.
                   !uid.hasPrefix("CADefaultDeviceAggregate")
             else { return nil }
-            return AudioInputDevice(id: id, uid: uid, name: name)
+            return AudioInputDevice(id: id, uid: uid, name: name, transport: transportType(id))
         }
+    }
+
+    /// The Mac's own microphone, if it has one.
+    static func builtInInput() -> AudioInputDevice? {
+        inputDevices().first { $0.isBuiltIn }
+    }
+
+    static func transportType(_ id: AudioDeviceID) -> UInt32 {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr else { return 0 }
+        return value
     }
 
     static func defaultInputDevice() -> AudioInputDevice? {

@@ -1,3 +1,4 @@
+import AVFoundation
 import AudioToolbox
 import CoreAudio
 import Foundation
@@ -18,17 +19,13 @@ final class Recorder {
     private(set) var startedAt: Date?
     private var device: AudioInputDevice?
     private var reopens = 0
+    /// Inputs this recording has used, by UID, so a fallback never goes back.
+    private var tried: Set<String> = []
     // Touched only on `callbackQueue`.
-    private var heardSound = false
-    private var silentFrames = 0
+    private var watch = DeadInput()
     static let targetRate: Double = 16_000
     private static let bufferCount = 3
     private static let bufferFrames: UInt32 = 1_600  // 100 ms
-    /// Digital silence this long after real sound means the input died: a
-    /// Bluetooth headset the Mac did not own when recording started can drop
-    /// its mic stream when our start sound finishes, feeding zeros from then on.
-    private static let deadSeconds = 0.5
-    private static let maxReopens = 3
     /// Linear RMS of each chunk and its length in frames, called on the audio thread.
     var onLevel: ((_ rms: Float, _ frames: Int) -> Void)?
 
@@ -43,12 +40,13 @@ final class Recorder {
         lock.lock(); samples.removeAll(keepingCapacity: true); lock.unlock()
         self.device = device
         reopens = 0
+        tried = Set([device?.uid ?? AudioDevices.defaultInputDevice()?.uid].compactMap { $0 })
         try open()
         startedAt = Date()
     }
 
     private func open() throws {
-        callbackQueue.sync { heardSound = false; silentFrames = 0 }
+        callbackQueue.sync { watch = DeadInput() }
         var format = AudioStreamBasicDescription(
             mSampleRate: Recorder.targetRate, mFormatID: kAudioFormatLinearPCM,
             mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
@@ -83,14 +81,40 @@ final class Recorder {
         queue = q
     }
 
-    /// Reopens the device after its input died, keeping what was recorded.
-    /// On main, like `start` and `stop`.
+    /// After the input died: reopens it, or once that has failed
+    /// `DeadInput.maxReopens` times (or it is gone), switches to the system
+    /// default input, then the built-in mic, keeping what was recorded. On
+    /// main, like `start` and `stop`.
     private func reopen() {
-        guard queue != nil, reopens < Recorder.maxReopens else { return }
-        reopens += 1
-        log("input went silent; reopening \(device?.name ?? "default input")")
-        teardown()
-        do { try open() } catch { log("\(error)") }
+        guard queue != nil else { return }
+        // Muted on purpose (a headset's mute gesture): not dead, and no other mic should take over.
+        if AVAudioApplication.shared.isInputMuted { return }
+        var present = device.map { d in AudioDevices.inputDevices().contains { $0.uid == d.uid } } ?? true
+        while true {
+            let name = device?.name ?? "default input"
+            switch DeadInput.next(present: present, reopens: reopens, tried: tried,
+                                  systemDefault: AudioDevices.defaultInputDevice(), builtIn: AudioDevices.builtInInput()) {
+            case .same:
+                reopens += 1
+                log("input went silent; reopening \(name)")
+            case .switchTo(let next):
+                log("\(name) \(present ? "stayed silent" : "is gone"); switching to \(next.name) for this recording")
+                device = next
+                tried.insert(next.uid)
+                reopens = 0
+            case .giveUp:
+                log("input went silent; no other input to switch to")
+                return
+            }
+            teardown()
+            do {
+                try open()
+                return
+            } catch {
+                log("\(error)")
+                present = false
+            }
+        }
     }
 
     /// Stops capture and returns everything recorded so far.
@@ -127,16 +151,51 @@ final class Recorder {
         for v in chunk { sum += v * v }
         let rms = sqrt(sum / Float(count))
         onLevel?(rms, count)
-        // Far below any live mic's noise floor; a dropped stream reads as zeros.
-        if rms > 1e-6 {
+        if watch.feed(rms: rms, frames: count) {
+            DispatchQueue.main.async { [weak self] in self?.reopen() }
+        }
+    }
+}
+
+/// Tells a dead input from a quiet room: a live mic always has some noise,
+/// a dropped stream reads as exact zeros.
+struct DeadInput: Equatable {
+    /// Far below any live mic's noise floor.
+    static let silentRMS: Float = 1e-6
+    /// Digital silence this long after real sound means the input died: a
+    /// Bluetooth headset the Mac did not own when recording started can drop
+    /// its mic stream when our start sound finishes, feeding zeros from then on.
+    static let deadSeconds = 0.5
+    /// Zeros from the very start for this long: the input never came up. Longer
+    /// than a slow AirPods switch to its mic, which reads zeros for a second or two.
+    static let neverSeconds = 3.0
+    static let maxReopens = 3
+
+    private var heardSound = false
+    private var silentFrames = 0
+
+    /// Feeds one buffer; true when the input reads as dead (then it counts afresh).
+    mutating func feed(rms: Float, frames: Int, rate: Double = Recorder.targetRate) -> Bool {
+        if rms > Self.silentRMS {
             heardSound = true
             silentFrames = 0
-        } else if heardSound {
-            silentFrames += count
-            if Double(silentFrames) >= Recorder.deadSeconds * Recorder.targetRate {
-                silentFrames = 0
-                DispatchQueue.main.async { [weak self] in self?.reopen() }
-            }
+            return false
         }
+        silentFrames += frames
+        guard Double(silentFrames) >= (heardSound ? Self.deadSeconds : Self.neverSeconds) * rate else { return false }
+        silentFrames = 0
+        return true
+    }
+
+    enum Next: Equatable { case same, switchTo(AudioInputDevice), giveUp }
+
+    /// What to open after the input died: the same device again, up to
+    /// `maxReopens` times while it is still connected; then the system
+    /// default input, then the built-in mic, skipping any `tried` already.
+    static func next(present: Bool, reopens: Int, tried: Set<String>,
+                     systemDefault: AudioInputDevice?, builtIn: AudioInputDevice?) -> Next {
+        if present && reopens < maxReopens { return .same }
+        for d in [systemDefault, builtIn].compactMap({ $0 }) where !tried.contains(d.uid) { return .switchTo(d) }
+        return .giveUp
     }
 }

@@ -201,6 +201,11 @@ security delete-identity -c dictate-dev                                 # if you
   (`indicator: false` hides it).
 - Microphone: menu bar > Microphone. The pick is stored in app defaults;
   `microphone` in config is the fallback when nothing is picked.
+- If the input goes dead mid-recording (exact digital silence for 0.5 s
+  after sound, or 3 s from the start), it is reopened up to 3 times; after
+  that, or at once if the device was unplugged, the recording carries on
+  from the system default input, then the built-in mic, keeping what was
+  already recorded. The log names each switch. A muted input is left alone.
 - The model loads on first use (about 1 s) and unloads after `unloadAfterSeconds`
   idle, so the resident process is a few MB between sessions.
 - `dictionary` is a list of correct spellings (names, tools, jargon). Each

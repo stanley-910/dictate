@@ -1,3 +1,4 @@
+import CoreAudio
 import Foundation
 import Testing
 @testable import dictate
@@ -206,5 +207,58 @@ struct NoSpeechTests {
         let c = try JSONDecoder().decode(Config.self, from: Data(#"{"soundPack": {"start": "Tink"}}"#.utf8))
         #expect(c.soundPack.nothing == "Submarine")
         #expect(c.soundPack.copied == "Glass")
+    }
+}
+
+struct DeadInputTests {
+    static let rate = 16_000.0
+    /// Feeds `seconds` of 100 ms buffers at `rms`; returns how many read as dead.
+    static func feed(_ w: inout DeadInput, _ seconds: Double, rms: Float) -> Int {
+        (0..<Int(seconds * 10)).filter { _ in w.feed(rms: rms, frames: 1_600, rate: rate) }.count
+    }
+
+    @Test func zerosAfterSoundAreDeadAfterHalfASecond() {
+        var w = DeadInput()
+        #expect(Self.feed(&w, 2, rms: 0.01) == 0)
+        #expect(Self.feed(&w, 0.4, rms: 0) == 0)
+        #expect(Self.feed(&w, 0.1, rms: 0) == 1)
+    }
+
+    @Test func aQuietRoomIsNotDead() {
+        var w = DeadInput()
+        #expect(Self.feed(&w, 10, rms: 0.0005) == 0)
+    }
+
+    @Test func zerosFromTheStartWaitLongerThanAHeadsetSwitch() {
+        var w = DeadInput()
+        #expect(Self.feed(&w, 2, rms: 0) == 0)
+        #expect(Self.feed(&w, 1, rms: 0) == 1)
+        // Then counts afresh.
+        #expect(Self.feed(&w, 2.9, rms: 0) == 0)
+    }
+
+    static let pods = AudioInputDevice(id: 1, uid: "pods", name: "AirPods", transport: kAudioDeviceTransportTypeBluetooth)
+    static let mac = AudioInputDevice(id: 2, uid: "mac", name: "MacBook Pro Microphone", transport: kAudioDeviceTransportTypeBuiltIn)
+    static let usb = AudioInputDevice(id: 3, uid: "usb", name: "USB mic", transport: kAudioDeviceTransportTypeUSB)
+
+    @Test(arguments: [
+        // Still there: reopen it three times first.
+        (true, 0, ["pods"], pods, mac, DeadInput.Next.same),
+        (true, 2, ["pods"], pods, mac, .same),
+        // Then the system default, then the built-in mic.
+        (true, 3, ["usb"], pods, mac, .switchTo(pods)),
+        (true, 3, ["usb", "pods"], pods, mac, .switchTo(mac)),
+        (true, 3, ["pods"], pods, mac, .switchTo(mac)),
+        // Gone: no point reopening it.
+        (false, 0, ["usb"], mac, mac, .switchTo(mac)),
+        // Nothing left that has not failed.
+        (true, 3, ["mac"], mac, mac, .giveUp),
+        (true, 3, ["pods", "mac"], pods, mac, .giveUp),
+        (false, 0, ["pods"], pods, nil, .giveUp),
+    ] as [(Bool, Int, [String], AudioInputDevice?, AudioInputDevice?, DeadInput.Next)])
+    func fallsBack(_ present: Bool, _ reopens: Int, _ tried: [String], _ systemDefault: AudioInputDevice?,
+                   _ builtIn: AudioInputDevice?, _ expected: DeadInput.Next) {
+        #expect(DeadInput.next(present: present, reopens: reopens, tried: Set(tried),
+                               systemDefault: systemDefault, builtIn: builtIn) == expected)
     }
 }
