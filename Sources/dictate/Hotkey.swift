@@ -98,6 +98,8 @@ final class HotkeyListener {
     /// How long each hotkey had been down at its last release or chord,
     /// timed here as the keys arrive: the handler may run late.
     private(set) var held: [TimeInterval]
+    /// When the last hotkey press or release arrived at the tap.
+    private(set) var lastEventAt = Date()
 
     init(hotkeys: [Hotkey], handler: @escaping (Event) -> Void) {
         self.hotkeys = hotkeys
@@ -109,6 +111,7 @@ final class HotkeyListener {
     }
 
     private func time(_ i: Int) {
+        lastEventAt = Date()
         held[i] = downAt[i].map { Date().timeIntervalSince($0) } ?? 0
     }
 
@@ -196,6 +199,7 @@ final class HotkeyListener {
                 switch self.lone[i].modifier(isDown: isModifierDown(code: lone, flags: event.flags)) {
                 case .pressed:
                     downAt[i] = Date()
+                    lastEventAt = Date()
                     handler(.pressed(i))
                 case .released(let clean):
                     time(i)
@@ -213,6 +217,7 @@ final class HotkeyListener {
                 if event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return nil }
                 keyDown[i] = true
                 downAt[i] = Date()
+                lastEventAt = Date()
                 handler(.pressed(i))
                 return nil
             case .keyUp:

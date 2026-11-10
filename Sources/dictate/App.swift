@@ -333,11 +333,18 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         log("discarded: the hotkey was part of a shortcut")
     }
 
+    /// When the key that stopped each recording arrived, and how long the
+    /// steps after it took, by delivery ticket: where a slow stop went.
+    private var stopTimes: [Int: (key: Date, steps: String)] = [:]
+
     private func stopAndTranscribe() {
         guard recording else { return }
+        let key = listener?.lastEventAt ?? Date()
+        let entered = Date()
         disarmCancel()
         stopTimers()
         let (pcm, seconds) = dictation.stop()
+        let micClosed = Date()
         recording = false
         let stopFlags = listener?.lastFlags ?? []
         if dictation.isTooShort(seconds) {
@@ -347,6 +354,8 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let target = NSWorkspace.shared.frontmostApplication
         let ticket = deliveries.add(.dictation(stopFlags: stopFlags, target: target,
                                                       pastedByHand: ClipboardHistory.shared.takePastedByHand()))
+        let ms = { (a: Date, b: Date) in Int(b.timeIntervalSince(a) * 1000) }
+        stopTimes[ticket] = (key, "handled +\(ms(key, entered)), mic closed +\(ms(key, micClosed))")
         showState()
         playSound(config.soundPack.stop)
         let input = dictation.inputName
@@ -355,7 +364,17 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if case .success(let text) = result, text.isEmpty {
                 log("no speech in \(String(format: "%.1f", seconds)) s from \(input); \(Dictation.levels(pcm))")
             }
-            DispatchQueue.main.async { self?.finished(ticket, result) }
+            let decoded = Date()
+            DispatchQueue.main.async {
+                if let self, let t = self.stopTimes.removeValue(forKey: ticket) {
+                    let ms = { (d: Date) in Int(d.timeIntervalSince(t.key) * 1000) }
+                    let onMain = Date()
+                    self.finished(ticket, result)
+                    log("stop key to paste, ms: \(t.steps), decoded +\(ms(decoded)), on main +\(ms(onMain)), delivered +\(ms(Date()))")
+                } else {
+                    self?.finished(ticket, result)
+                }
+            }
         }
     }
 
