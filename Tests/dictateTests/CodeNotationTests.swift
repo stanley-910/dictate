@@ -252,3 +252,49 @@ struct CodeTalkTests {
         #expect(CodeNotation.apply("Call node.next.", spans: true) == "Call `node.next`.")
     }
 }
+
+struct MathTests {
+    @Test(arguments: [
+        ("Theta of n log n and omega of n.", "Θ(n log n) and Ω(n)."),
+        ("Big theta of n squared", "Θ(n^2)"),
+        ("Log base 2 of n.", "log_2 n."),
+        ("log base 2 of n plus 1", "log_2 n + 1"),
+        ("O of log base 2 of n", "O(log_2 n)"),
+        ("There are n choose 2 pairs.", "There are C(n, 2) pairs."),
+        ("n choose k", "C(n, k)"),
+        ("Sum from i equals 1 to n of i.", "Σ_{i=1}^n i."),
+        ("The sum from i equals 1 to n of x sub i", "The Σ_{i=1}^n x_i"),
+        ("product from k equals 0 to n minus 1 of k plus 1", "Π_{k=0}^{n - 1} k + 1"),
+        ("x sub i plus x sub j", "x_i + x_j"),
+        ("x sub I", "x_i"),
+        ("x is approximately 3.14", "x ≈ 3.14"),
+        ("n is approximately equal to 1000", "n ≈ 1000"),
+        ("It is 2.5 times 10 to the minus 3.", "It is 2.5e-3."),
+        ("It takes 1.6 times 10 to the minus 19", "It takes 1.6e-19"),
+        ("3 times 10 to the 8", "3e8"),
+        ("The answer is 10 to the 9 plus 7.", "The answer is 10^9 + 7."),
+        ("x to the minus 1", "x^-1"),
+        ("2n times 10 to the 3", "2n * 10^3"),  // not scientific: 2n is not a number
+    ])
+    func converts(_ said: String, _ typed: String) {
+        #expect(CodeNotation.apply(said) == typed)
+    }
+
+    @Test(arguments: [
+        "The omega of the system",
+        "Theta is the angle.",
+        "theta of one thing",
+        "the log base is 2",
+        "I choose 2 of them.",
+        "You choose k.",
+        "I sub in for him.",
+        "the sub i ordered",
+        "Plan B is approximately 2 hours.",
+        "It is approximately 5 minutes.",
+        "the sum from the first row",
+        "sum from 1 to n",
+    ])
+    func leavesProse(_ said: String) {
+        #expect(CodeNotation.apply(said) == said)
+    }
+}

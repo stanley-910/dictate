@@ -266,6 +266,12 @@ security delete-identity -c dictate-dev                                 # if you
   ("i is less than j and j is less than n" -> `i < j && j < n`, but "x
   equals 1 and we stop" keeps "and"), and "not v of i" -> `!v[i]` only in
   such a join.
+  Math: "theta of n" / "omega of n" -> `Θ(n)` / `Ω(n)` like Big-O; "log
+  base 2 of n" -> `log_2 n`; "n choose k" -> `C(n, k)` (not "I choose 2");
+  "x sub i" -> `x_i` after a letter; "sum from i equals 1 to n of x sub i"
+  -> `Σ_{i=1}^n x_i` ("product" -> `Π`; the "of" part is needed);
+  "is approximately" -> `≈` between operands; "2.5 times 10 to the minus
+  3" -> `2.5e-3` after a plain number, and "x to the minus 1" -> `x^-1`.
   Symbols: "x arrow y" -> `x -> y`, "x fat arrow x plus 1" -> `x => x + 1`
   (between operands, so "follow the arrow" and "an arrow function" stay);
   "std double colon vector" -> `std::vector` between two names (not after

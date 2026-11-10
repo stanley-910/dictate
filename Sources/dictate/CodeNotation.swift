@@ -38,7 +38,7 @@ enum CodeNotation {
 
     /// What `arithmetic` and the comparisons write between operands.
     static let codeOperators: Set<String> = [
-        "+", "-", "*", "/", "%", "=", "==", "!=", "<", ">", "<=", ">=", "->", "=>", "+=", "-=", "*=", "&&", "||",
+        "+", "-", "*", "/", "%", "=", "==", "!=", "<", ">", "<=", ">=", "->", "=>", "+=", "-=", "*=", "&&", "||", "≈",
     ]
 
     // MARK: arithmetic
@@ -105,7 +105,7 @@ enum CodeNotation {
     /// Past the ")" of an `O(...)` that `bigO` wrote at `i`, so arithmetic
     /// does not take its inside apart again.
     private static func bigOEnd(_ c: [Character], _ i: Int) -> Int? {
-        guard c[i] == "O", i + 1 < c.count, c[i + 1] == "(", isWordStart(c, i) else { return nil }
+        guard "OΘΩ".contains(c[i]), i + 1 < c.count, c[i + 1] == "(", isWordStart(c, i) else { return nil }
         var depth = 0
         for j in (i + 1)..<c.count {
             if c[j] == "(" { depth += 1 } else if c[j] == ")" { depth -= 1; if depth == 0 { return j + 1 } }
@@ -127,8 +127,8 @@ enum CodeNotation {
             if let end = spanEnd(chars, i) {
                 out += String(chars[i..<end])
                 i = end
-            } else if isWordStart(chars, i), let (expr, end) = parseBigO(chars, from: i) {
-                out += spans ? "`O(\(expr))`" : "O(\(expr))"
+            } else if isWordStart(chars, i), let (head, expr, end) = parseBigO(chars, from: i) {
+                out += spans ? "`\(head)(\(expr))`" : "\(head)(\(expr))"
                 i = end
             } else {
                 out.append(chars[i])
@@ -196,7 +196,10 @@ enum CodeNotation {
         "since", "if", "when", "while", "in", "for", "with", "to", "is", "too", "instead", "then",
     ]
 
-    private static func parseBigO(_ c: [Character], from i: Int) -> (String, Int)? {
+    /// "theta of n" and "omega of n" are bounds like "O of n".
+    static let bounds = ["o": "O", "oh": "O", "theta": "Θ", "omega": "Ω"]
+
+    private static func parseBigO(_ c: [Character], from i: Int) -> (String, String, Int)? {
         guard var (w, end) = word(c, i, digits: false) else { return nil }
         if w.lowercased() == "big" {
             guard end < c.count, c[end] == " " || c[end] == "-",
@@ -204,12 +207,12 @@ enum CodeNotation {
             (w, end) = next
         }
         let lower = w.lowercased()
-        guard lower == "o" || lower == "oh" else { return nil }
+        guard let head = bounds[lower] else { return nil }
         var toks = tokens(c, from: end)
         if toks.first?.0.lowercased() == "of" {
             toks.removeFirst()
-        } else if lower == "oh" {
-            return nil  // "oh n" is not how anyone says it; "oh, so" must stay
+        } else if lower != "o" {
+            return nil  // "oh n" is not how anyone says it; "oh, so" and "theta is" must stay
         }
         guard let found = Expression.parse(toks.map { $0.0 }, mode: .bigO), found.used > 0 else { return nil }
         let (expr, used) = (found.text, found.used)
@@ -219,7 +222,7 @@ enum CodeNotation {
            !complexityWords.contains(toks[used].0.lowercased()) {
             return nil
         }
-        return (expr, toks[used - 1].1)
+        return (head, expr, toks[used - 1].1)
     }
 
     /// A small grammar over spoken math words. Parsing is greedy and keeps the
@@ -256,6 +259,8 @@ enum CodeNotation {
             (["less", "than"], "<"), (["greater", "than"], ">"), (["equal", "to"], "=="),
             (["double", "equals"], "=="), (["at", "most"], "<="), (["at", "least"], ">="),
             (["equals"], "=="),
+            (["is", "approximately", "equal", "to"], "≈"), (["is", "approximately"], "≈"),
+            (["approximately", "equal", "to"], "≈"), (["approximately", "equals"], "≈"), (["is", "roughly"], "≈"),
         ]
 
         let words: [String]
@@ -312,6 +317,31 @@ enum CodeNotation {
             if w.count > 2, w.hasPrefix("`"), w.hasSuffix("`") { return String(w.dropFirst().dropLast()) }
             if w.contains("."), w.first!.isLetter, w.split(separator: ".").allSatisfy({ $0.first!.isLetter }) { return w }
             return nil
+        }
+
+        /// The exponent spoken `k` words ahead, "minus 3" or "9", and the words it takes.
+        private func power(_ k: Int) -> (String, Int)? {
+            var k = k, sign = ""
+            if peek(k) == "minus" || peek(k) == "negative" { sign = "-"; k += 1 }
+            guard i + k < words.count, let o = operand(words[i + k]) else { return nil }
+            return (sign + o, sign.isEmpty ? 1 : 2)
+        }
+
+        /// "sum from i equals 1 to n of x sub i" -> Σ_{i=1}^n x_i, and
+        /// "product" -> Π. The "of" and what follows it are needed, so "the
+        /// sum from the first" and "sum from 1 to n" stay.
+        private func series() -> (String, Int)? {
+            guard peek(1) == "from", i + 4 < words.count, let v = operand(words[i + 2]), v.first!.isLetter,
+                  peek(3) == "equals",
+                  let low = Expression.parse(Array(words[(i + 4)...]), mode: .index, names: names),
+                  peek(4 + low.used) == "to", i + 5 + low.used < words.count,
+                  let high = Expression.parse(Array(words[(i + 5 + low.used)...]), mode: .index, names: names),
+                  peek(5 + low.used + high.used) == "of", i + 6 + low.used + high.used < words.count,
+                  let body = Expression.parse(Array(words[(i + 6 + low.used + high.used)...]), mode: .index,
+                                              names: names, functions: functions) else { return nil }
+            let top = high.text.contains(" ") ? "{\(high.text)}" : high.text
+            let sign = peek() == "sum" ? "Σ" : "Π"
+            return ("\(sign)_{\(v)=\(low.text)}^\(top) \(body.text)", 6 + low.used + high.used + body.used)
         }
 
         /// A word that "plus equals" or "plus plus" follows: "count plus
@@ -381,6 +411,20 @@ enum CodeNotation {
                     lastOperand = o
                     previousWasNumber = o.first!.isNumber
                     expectOperand = false
+                } else if expectOperand, lw == "log", peek(1) == "base", let b = operand(i + 2 < words.count ? words[i + 2] : nil) {
+                    // "log base 2 of n" -> log_2 n
+                    i += 3
+                    if peek() == "of" { i += 1 }
+                    guard let o = operand(i < words.count ? words[i] : nil) else { return }
+                    out += "log_\(b) \(o)"
+                    i += 1
+                    sawMath = true
+                    expectOperand = false; previousWasNumber = false
+                } else if arithmetic, expectOperand, lw == "sum" || lw == "product", let (text, used) = series() {
+                    out += text
+                    i += used
+                    sawMath = true
+                    expectOperand = false; previousWasNumber = false
                 } else if !arithmetic, lw == "log" {
                     out += (expectOperand ? "" : " ") + "log "
                     i += 1
@@ -436,6 +480,18 @@ enum CodeNotation {
                         i += 2
                         sawMath = true
                     }
+                    // "x sub i" -> x_i, "n choose k" -> C(n, k); not "I sub in", "I choose 2".
+                    if arithmetic, o.count == 1, o.first!.isLetter, peek() == "sub",
+                       let sub = operand(i + 1 < words.count ? (words[i + 1] == "I" ? "i" : words[i + 1]) : nil) {
+                        out += "_" + sub
+                        i += 2
+                        sawMath = true
+                    }
+                    if arithmetic, peek() == "choose", out.hasSuffix(o), let k = operand(i + 1 < words.count ? words[i + 1] : nil) {
+                        out = String(out.dropLast(o.count)) + "C(\(o), \(k))"
+                        i += 2
+                        sawMath = true
+                    }
                     // "i plus plus" -> i++, not "C plus plus" (a capital needs declaring).
                     if arithmetic, named, !(o.first!.isUppercase && o.count == 1 && !names.contains(o)),
                        let p = peek(), p == peek(1), p == "plus" || p == "minus" {
@@ -466,14 +522,18 @@ enum CodeNotation {
                 } else if !expectOperand, lw == "to", peek(1) == "the" {
                     var k = 2
                     if peek(k) == "power", peek(k + 1) == "of" { k += 2 }
+                    var sign = ""
+                    if peek(k) == "minus" || peek(k) == "negative" { sign = "-"; k += 1 }  // "x to the minus 1" -> x^-1
                     guard let x = peek(k) else { return }
-                    let exponent: String?
+                    var exponent: String?
                     if let o = Self.ordinals[x] { exponent = o }
                     else if x.count == 3, x.hasSuffix("th"), x.first!.isLetter { exponent = String(words[i + k].prefix(1)) }  // nth, kth
                     else if x.hasSuffix("th"), x.dropLast(2).allSatisfy(\.isNumber), x.count > 2 { exponent = String(x.dropLast(2)) }  // 10th
                     else { exponent = operand(words[i + k]) }
+                    guard let e = exponent else { return }
+                    exponent = sign + e
                     guard let exponent else { return }
-                    if names.contains(exponent) { usesName = true }
+                    if names.contains(e) { usesName = true }
                     out += "^" + exponent
                     i += k + 1
                     sawMath = true
@@ -490,6 +550,14 @@ enum CodeNotation {
                     sawComparison = true
                     best = found
                     return
+                } else if !expectOperand, lw == "times", out.hasSuffix(lastOperand), lastOperand.first?.isNumber == true,
+                          lastOperand.allSatisfy({ $0.isNumber || $0 == "." }), peek(1) == "10", peek(2) == "to", peek(3) == "the",
+                          let (exponent, used) = power(4), Int(exponent) != nil {
+                    // "2.5 times 10 to the minus 3" -> 2.5e-3
+                    out += "e" + exponent
+                    i += 4 + used
+                    sawMath = true
+                    previousWasNumber = false
                 } else if !expectOperand, mode == .arithmetic, ["plus", "minus", "times"].contains(lw), peek(1) == "equals" {
                     // "count plus equals 1" -> count += 1
                     out += " \(Self.operators[lw]!)= "
