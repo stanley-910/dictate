@@ -42,6 +42,14 @@ struct PostProcessTests {
         #expect(c.postProcess(said) == typed)
     }
 
+    @Test func layoutAfterLowerCasing() {
+        var c = Config()
+        c.casing = .lower
+        #expect(c.postProcess("Steps, bullet sort, bullet scan.") == "steps:\n- sort\n- scan")
+        c.layout = false
+        #expect(c.postProcess("Steps, bullet sort, bullet scan.") == "steps, bullet sort, bullet scan.")
+    }
+
     @Test func endPeriod() {
         var c = Config()
         c.endPeriod = false

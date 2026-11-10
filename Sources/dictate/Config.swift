@@ -93,6 +93,9 @@ struct Config: Codable {
     /// Put every expression `codeNotation` writes in backticks ("`4 - 52`",
     /// "`O(n)`"), not only those with a declared variable, for Markdown.
     var codeSpans: Bool = false
+    /// Spoken layout: "bullet ... bullet ..." -> "- " items, "number 1 ...
+    /// number 2 ..." -> "1. " items, "new line", "new paragraph".
+    var layout: Bool = true
     /// Spoken phrases listed in menu bar > Cheat Sheet with what the
     /// replacements turn them into, e.g. "wink smile face" -> ";)".
     var cheatSheet: [String] = []
@@ -223,6 +226,7 @@ struct Config: Codable {
         cheatSheet = try c.decodeIfPresent([String].self, forKey: .cheatSheet) ?? d.cheatSheet
         codeNotation = try c.decodeIfPresent(Bool.self, forKey: .codeNotation) ?? d.codeNotation
         codeSpans = try c.decodeIfPresent(Bool.self, forKey: .codeSpans) ?? d.codeSpans
+        layout = try c.decodeIfPresent(Bool.self, forKey: .layout) ?? d.layout
     }
 
     static var path: URL {
@@ -264,12 +268,13 @@ struct Config: Codable {
         try (encoder.encode(JSONValue.object(object)) + Data("\n".utf8)).write(to: url, options: .atomic)
     }
 
-    /// Dictionary, replacements, then code notation, in that order.
+    /// Dictionary, replacements, code notation, then layout, in that order.
     func postProcess(_ raw: String) -> String {
         let text = casing == .lower ? raw.lowercased() : raw
         let fixed = Dictionary.apply(text, terms: Dictionary.terms(dictionary), threshold: dictionaryThreshold)
         var out = Replacements.apply(fixed, rules: replacements)
         if codeNotation { out = CodeNotation.apply(out, spans: codeSpans) }
+        if layout { out = Layout.apply(out, capitalize: casing != .lower) }
         if casing == .sentence, let first = out.first, first.isLowercase, !CodeNotation.startsWithCode(out) {
             out = first.uppercased() + out.dropFirst()
         }
