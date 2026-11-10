@@ -278,6 +278,21 @@ security delete-identity -c dictate-dev                                 # if you
   trigger a noun leaves it alone: "the next bullet in the list", "bullet
   points are", "the number one reason", "a new line", "start a new line of
   work", "new line character", "the trailing newline".
+- Saying "paste" on its own inserts a copy from the clipboard history at
+  that spot: the first "paste" in a recording is the newest copy, the next
+  the one before it, and so on, starting over each recording.
+  `pasteOrder: "oldest"` instead pastes the last N copies oldest first, for
+  N commands. The command must stand apart: a pause the model marks with
+  punctuation, the start or end, or a spoken "new line" on each side
+  ("Here is the error. Paste. And ...", "new line, paste, new line"), so
+  "copy and paste it", "paste the link below" and "this paste with" stay.
+  The copy goes in as it was, after every other rule. The history is the
+  daemon's own (macOS has none to read): the last 20 plain-text copies
+  since launch, in memory only, skipping items password managers mark
+  concealed or transient and dictate's own pastes; the log gives counts,
+  never contents. With fewer copies than commands the extra ones insert
+  nothing. Saved transcripts, Copy Last Transcript, `dictate fix`,
+  `transcribe` and `listen` show `[paste]` where a copy would go.
 - Menu bar > Dictionary (Cmd-D while the menu is open) edits `dictionary`
   in a window, one term per line; Save writes the config file (keys come
   out sorted and pretty-printed, a symlinked file stays a link).

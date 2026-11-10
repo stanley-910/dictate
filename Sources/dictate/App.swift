@@ -69,6 +69,7 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         requestPermissions()
         startListening()
+        ClipboardHistory.shared.start()
         configModified = Config.modified
         reloadTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             self?.reloadIfChanged()
@@ -390,6 +391,8 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let delivery = PasteTarget.delivery(chosen, stoppedIn: target?.processIdentifier, frontNow: front?.processIdentifier)
             if delivery != chosen {
                 // Focus is not moved back: the user went somewhere on purpose.
+                text = ClipboardHistory.shared.fill(text, order: config.pasteOrder)
+                if text.isEmpty { return }
                 if config.trailingSpace { text += " " }
                 Paster.copy(text)
                 playSound(config.soundPack.copied)
@@ -400,6 +403,9 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 text = CursorText.fit(text, after: CursorText.beforeCursor(), terms: config.dictionary,
                                       isWord: CursorText.isKnownWord)
             }
+            // After the fit, so a pasted copy keeps its own casing.
+            text = ClipboardHistory.shared.fill(text, order: config.pasteOrder)
+            if text.isEmpty { return }
             if config.trailingSpace { text += " " }
             switch delivery {
             case .paste:

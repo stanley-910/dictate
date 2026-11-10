@@ -18,7 +18,7 @@ enum Paster {
         let pb = NSPasteboard.general
         let earlier = takePendingRestore()
         let saved = restoreClipboard ? (earlier ?? snapshot(pb)) : []
-        pb.clearContents()
+        ClipboardHistory.clearForOwnWrite(pb)
         pb.setString(text, forType: .string)
         let ours = pb.changeCount
 
@@ -44,7 +44,7 @@ enum Paster {
     static func copy(_ text: String) {
         _ = takePendingRestore()
         let pb = NSPasteboard.general
-        pb.clearContents()
+        ClipboardHistory.clearForOwnWrite(pb)
         pb.setString(text, forType: .string)
     }
 
@@ -83,7 +83,7 @@ enum Paster {
     }
 
     private static func restore(_ pb: NSPasteboard, _ snap: Snapshot) {
-        pb.clearContents()
+        ClipboardHistory.clearForOwnWrite(pb)
         guard !snap.isEmpty else { return }
         let items: [NSPasteboardItem] = snap.map { d in
             let item = NSPasteboardItem()

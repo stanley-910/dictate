@@ -96,6 +96,10 @@ struct Config: Codable {
     /// Spoken layout: "bullet ... bullet ..." -> "- " items, "number 1 ...
     /// number 2 ..." -> "1. " items, "new line", "new paragraph".
     var layout: Bool = true
+    /// Which copy each spoken "paste" inserts: "recent" (the newest first,
+    /// then the one before) or "oldest" (the oldest of the last N copies
+    /// first, for N commands).
+    var pasteOrder: ClipboardHistory.Order = .recent
     /// Spoken phrases listed in menu bar > Cheat Sheet with what the
     /// replacements turn them into, e.g. "wink smile face" -> ";)".
     var cheatSheet: [String] = []
@@ -227,6 +231,7 @@ struct Config: Codable {
         codeNotation = try c.decodeIfPresent(Bool.self, forKey: .codeNotation) ?? d.codeNotation
         codeSpans = try c.decodeIfPresent(Bool.self, forKey: .codeSpans) ?? d.codeSpans
         layout = try c.decodeIfPresent(Bool.self, forKey: .layout) ?? d.layout
+        pasteOrder = try c.decodeIfPresent(ClipboardHistory.Order.self, forKey: .pasteOrder) ?? d.pasteOrder
     }
 
     static var path: URL {
@@ -269,8 +274,9 @@ struct Config: Codable {
     }
 
     /// Dictionary, replacements, code notation, then layout, in that order.
+    /// A spoken "paste" comes out as `ClipboardHistory.placeholder`.
     func postProcess(_ raw: String) -> String {
-        let text = casing == .lower ? raw.lowercased() : raw
+        let text = ClipboardHistory.mark(casing == .lower ? raw.lowercased() : raw)
         let fixed = Dictionary.apply(text, terms: Dictionary.terms(dictionary), threshold: dictionaryThreshold)
         var out = Replacements.apply(fixed, rules: replacements)
         if codeNotation { out = CodeNotation.apply(out, spans: codeSpans) }
@@ -283,7 +289,8 @@ struct Config: Codable {
             // A single period only; "..." is a deliberate trail-off.
             if out.hasSuffix("."), !out.hasSuffix("..") { out.removeLast() }
         }
-        return out
+        // The daemon fills these from the clipboard history after this.
+        return out.replacingOccurrences(of: ClipboardHistory.marker, with: ClipboardHistory.placeholder)
     }
 
     private static let styleKey = "style"
