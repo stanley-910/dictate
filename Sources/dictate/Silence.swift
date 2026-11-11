@@ -119,11 +119,51 @@ enum Silence {
     /// Loudness is judged in 100 ms blocks, as `dictate listen` does.
     private static let blockSeconds = 0.1
 
+    /// A room louder than this is judged again with its rumble filtered out.
+    static let noisyRoom: Float = 0.008
+    /// Below this is rumble (a fan, a desk, traffic), not the part of a
+    /// voice the check needs.
+    static let rumbleHz = 200.0
+    /// `EndOfSpeech.speechRMS` for audio with the rumble taken out, which
+    /// takes the low part of the voice with it.
+    static let filteredSpeechRMS: Float = 0.004
+
     /// Seconds of speech in `pcm`, by `dictate listen`'s rule: blocks above
     /// both `EndOfSpeech.speechRMS` and `EndOfSpeech.overFloor` times the room
     /// (the quietest tenth of the blocks, at most `loudestRoom`). Only runs of two or more blocks
-    /// count; a key click or a tap on the desk fills one.
+    /// count; a key click or a tap on the desk fills one. A loud steady
+    /// rumble hides a voice from that rule, so when it finds nothing in a
+    /// noisy room the same rule is tried on the audio above `rumbleHz`.
     static func speechSeconds(_ pcm: [Float], rate: Int) -> Double {
+        let (seconds, room) = speech(pcm, rate: rate, floor: EndOfSpeech.speechRMS)
+        guard seconds < minSpeechSeconds, room > noisyRoom else { return seconds }
+        return max(seconds, speech(highPass(pcm, rate: rate), rate: rate, floor: filteredSpeechRMS).seconds)
+    }
+
+    /// `pcm` without what is below `rumbleHz`: two second-order high-pass
+    /// filters in a row (24 dB per octave).
+    static func highPass(_ pcm: [Float], rate: Int) -> [Float] {
+        let w = 2 * Double.pi * rumbleHz / Double(rate)
+        let alpha = sin(w) / (2 * 0.5.squareRoot())
+        let a0 = 1 + alpha
+        let b0 = Float((1 + cos(w)) / 2 / a0), b1 = Float(-(1 + cos(w)) / a0)
+        let a1 = Float(-2 * cos(w) / a0), a2 = Float((1 - alpha) / a0)
+        var out = pcm
+        for _ in 0..<2 {
+            var x1: Float = 0, x2: Float = 0, y1: Float = 0, y2: Float = 0
+            for i in out.indices {
+                let x = out[i]
+                let y = b0 * x + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2
+                x2 = x1; x1 = x; y2 = y1; y1 = y
+                out[i] = y
+            }
+        }
+        return out
+    }
+
+    /// Seconds of speech by the rule above with `floor` as the least a
+    /// speech block can measure, and the room's level before its cap.
+    private static func speech(_ pcm: [Float], rate: Int, floor: Float) -> (seconds: Double, room: Float) {
         let block = max(1, Int(blockSeconds * Double(rate)))
         var levels: [Float] = []
         var i = 0
@@ -135,15 +175,15 @@ enum Silence {
         }
         // A mic still waking reads zeros; that is not the room.
         let live = levels.filter { $0 > EndOfSpeech.deadRMS }.sorted()
-        guard !live.isEmpty else { return 0 }
-        let room = min(loudestRoom, live[Int(Double(live.count - 1) * floorPercentile)])
-        let threshold = max(EndOfSpeech.speechRMS, room * EndOfSpeech.overFloor)
+        guard !live.isEmpty else { return (0, 0) }
+        let heard = live[Int(Double(live.count - 1) * floorPercentile)]
+        let threshold = max(floor, min(loudestRoom, heard) * EndOfSpeech.overFloor)
         var run = 0, total = 0
         for level in levels + [0] {
             if level > threshold { run += 1; continue }
             if run >= 2 { total += run }
             run = 0
         }
-        return Double(total) * blockSeconds
+        return (Double(total) * blockSeconds, heard)
     }
 }

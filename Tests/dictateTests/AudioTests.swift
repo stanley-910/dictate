@@ -43,6 +43,29 @@ struct AudioTests {
         #expect(s > 0.8 && s < 1.2)
     }
 
+    /// A fan or a desk hum at ten times a quiet room, as the built-in mic
+    /// recorded it under a voice no louder than the hum.
+    static func rumble(_ seconds: Double) -> [Float] {
+        zip(tone(seconds, amplitude: 0.028, hz: 60), noise(seconds, amplitude: 0.004)).map(+)
+    }
+
+    @Test func aVoiceUnderRumbleCounts() {
+        var pcm = Self.rumble(6)
+        for (i, v) in Self.tone(1, amplitude: 0.02, hz: 700).enumerated() { pcm[2 * Self.rate + i] += v }
+        // Hidden from the plain rule: nothing is 2.5 times the room.
+        #expect(Silence.speechSeconds(pcm, rate: Self.rate) >= 0.8)
+    }
+
+    @Test func rumbleAloneHasNoSpeech() {
+        #expect(Silence.speechSeconds(Self.rumble(6), rate: Self.rate) < Silence.minSpeechSeconds)
+    }
+
+    @Test func aClickUnderRumbleIsNotSpeech() {
+        var pcm = Self.rumble(6)
+        for (i, v) in Self.tone(0.05, amplitude: 0.3, hz: 2000).enumerated() { pcm[2 * Self.rate + 800 + i] += v }
+        #expect(Silence.speechSeconds(pcm, rate: Self.rate) < Silence.minSpeechSeconds)
+    }
+
     @Test func speechFromEndToEndCounts() {
         // Talking the whole clip: the quietest tenth is speech, not room.
         #expect(Silence.speechSeconds(Self.tone(3, amplitude: 0.1), rate: Self.rate) > 2)
