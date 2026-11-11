@@ -317,8 +317,11 @@ final class LiveTranscript {
     /// full text. Completion runs on the transcriber's queue.
     func finish(_ pcm: [Float], completion: @escaping (Result<String, Error>) -> Void) {
         stop()
+        let asked = Date()
         transcriber.queue.async {
             let t0 = Date()
+            let waited = Int(t0.timeIntervalSince(asked) * 1000)
+            if waited >= 50 { log("the last piece waited \(waited) ms for the model's queue") }
             let early = self.pieces.count
             let tail = self.decoded < pcm.count ? Array(pcm[self.decoded...]) : []
             let chunks = self.chunker.split(tail).filter { !$0.isEmpty }

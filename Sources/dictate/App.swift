@@ -356,9 +356,16 @@ final class DictateApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                       pastedByHand: ClipboardHistory.shared.takePastedByHand()))
         let ms = { (a: Date, b: Date) in Int(b.timeIntervalSince(a) * 1000) }
         stopTimes[ticket] = (key, "handled +\(ms(key, entered)), mic closed +\(ms(key, micClosed))")
-        showState()
-        playSound(config.soundPack.stop)
         let input = dictation.inputName
+        // The decode starts before the pill and the sound: neither holds it up.
+        defer {
+            let t0 = Date()
+            showState()
+            let t1 = Date()
+            playSound(config.soundPack.stop)
+            let shown = ms(t0, t1), played = ms(t1, Date())
+            if shown + played >= 50 { log("after stop the pill took \(shown) ms and the stop sound \(played) ms") }
+        }
         dictation.text(from: pcm, recording: true) { [weak self] result in
             // Off main, and only when needed: a long recording takes a moment.
             if case .success(let text) = result, text.isEmpty {

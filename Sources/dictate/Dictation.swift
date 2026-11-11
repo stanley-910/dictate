@@ -93,8 +93,12 @@ final class Dictation {
         if !recording { live = nil }
         let take = live != nil ? self.take : nil
         let done: (Result<String, Error>) -> Void = { [transcriber] result in
+            let t0 = Date()
             let result = result.map { transcriber.config.postProcess($0) }
+            let t1 = Date()
             if let take, case .success(let text) = result, !text.isEmpty { take.saveText(text) }
+            let rules = Int(t1.timeIntervalSince(t0) * 1000), saved = Int(Date().timeIntervalSince(t1) * 1000)
+            if rules + saved >= 50 { log("text rules took \(rules) ms, saving the text \(saved) ms") }
             completion(result)
         }
         if let live {
