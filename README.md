@@ -308,7 +308,8 @@ security delete-identity -c dictate-dev                                 # if you
   say so ("a dual right problem", "read and right", "right to the file",
   "let me right a test"; "you're right" and "the right file" stay), and
   "cash" -> `cache` unless the words around it say money ("pay in cash",
-  "cash out", "petty cash").
+  "cash out", "petty cash"). The model's ".file" for a spoken "dotfile" is
+  written `dotfile`.
 - `homophonePairs` adds your own sound-alike words, with no patterns to
   write: `{ "heard": "sink", "meant": "sync", "near": ["data", "calendar",
   "job"] }` changes "sink" only in a sentence that has one of the `near`

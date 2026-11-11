@@ -112,6 +112,16 @@ struct HomophonesTests {
         #expect(c.postProcess("The kitchen sink.") == "The kitchen sink.")
     }
 
+    @Test(arguments: [
+        ("Or I guess it's just a .file change.", "Or I guess it's just a dotfile change."),
+        ("It lives in my .files repo.", "It lives in my dotfiles repo."),
+        ("Match *.file and config.file here.", "Match *.file and config.file here."),
+        ("Open ./.file and the .filename field.", "Open ./.file and the .filename field."),
+    ])
+    func dotfiles(_ said: String, _ typed: String) {
+        #expect(Homophones.apply(said) == typed)
+    }
+
     @Test func flagTurnsItOff() {
         var c = Config()
         #expect(c.postProcess("Clear the cash.") == "Clear the cache.")

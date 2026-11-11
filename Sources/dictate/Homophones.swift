@@ -6,10 +6,17 @@ import Foundation
 /// it say it is "write" ("read and right", "right to the file", "let me
 /// right a test"), so "you're right" and "the right file" stay. "cash" is
 /// the other way round: it becomes "cache" unless the words around it say
-/// money ("pay in cash", "cash out", "petty cash").
+/// money ("pay in cash", "cash out", "petty cash"). A spoken "dotfile" that
+/// the model writes ".file" gets its word back.
 enum Homophones {
     static func apply(_ text: String) -> String {
-        cash(write(text))
+        dotfile(cash(write(text)))
+    }
+
+    /// The model writes a spoken "dotfile" as ".file"; "*.file" and
+    /// "name.file" are left as they are.
+    private static func dotfile(_ text: String) -> String {
+        text.replacingOccurrences(of: #"(?<![\w.*/])\.(files?)\b"#, with: "dot$1", options: .regularExpression)
     }
 
     /// The config's own pairs. `heard` (a word or phrase, any case) becomes
