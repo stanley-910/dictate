@@ -99,6 +99,9 @@ struct Config: Codable {
     /// "5 megabytes" -> "5 MB", "200 milliseconds" -> "200 ms", "3
     /// gigahertz" -> "3 GHz" after a number; minutes and seconds stay words.
     var units: Bool = true
+    /// "a dual right problem" -> "a dual write problem", "clear the cash" ->
+    /// "clear the cache", from the words around them.
+    var homophones: Bool = true
     /// Which copy each spoken "paste" inserts: "recent" (the newest first,
     /// then the one before) or "oldest" (the oldest of the last N copies
     /// first, for N commands).
@@ -235,6 +238,7 @@ struct Config: Codable {
         codeSpans = try c.decodeIfPresent(Bool.self, forKey: .codeSpans) ?? d.codeSpans
         layout = try c.decodeIfPresent(Bool.self, forKey: .layout) ?? d.layout
         units = try c.decodeIfPresent(Bool.self, forKey: .units) ?? d.units
+        homophones = try c.decodeIfPresent(Bool.self, forKey: .homophones) ?? d.homophones
         pasteOrder = try c.decodeIfPresent(ClipboardHistory.Order.self, forKey: .pasteOrder) ?? d.pasteOrder
     }
 
@@ -277,12 +281,13 @@ struct Config: Codable {
         try (encoder.encode(JSONValue.object(object)) + Data("\n".utf8)).write(to: url, options: .atomic)
     }
 
-    /// Dictionary, replacements, code notation, units, then layout, in that order.
+    /// Dictionary, replacements, homophones, code notation, units, then layout, in that order.
     /// A spoken "paste" comes out as `ClipboardHistory.placeholder`.
     func postProcess(_ raw: String) -> String {
         let text = ClipboardHistory.mark(casing == .lower ? raw.lowercased() : raw)
         let fixed = Dictionary.apply(text, terms: Dictionary.terms(dictionary), threshold: dictionaryThreshold)
         var out = Replacements.apply(fixed, rules: replacements)
+        if homophones { out = Homophones.apply(out) }
         if codeNotation { out = CodeNotation.apply(out, spans: codeSpans) }
         if units { out = Units.apply(out) }
         if layout { out = Layout.apply(out, capitalize: casing != .lower) }

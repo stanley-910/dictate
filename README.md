@@ -303,6 +303,12 @@ security delete-identity -c dictate-dev                                 # if you
   the model's own "4MB" -> `4 MB`. Seconds, minutes, hours, bytes and bits
   stay words ("wait 5 minutes", "a 10 gigabit network"), and so does a unit
   with no number ("a few megabytes"). The model writes "3x" itself.
+- `homophones` (default true) respells two words the model hears right but
+  writes as the everyday word: "right" -> `write` where the words around it
+  say so ("a dual right problem", "read and right", "right to the file",
+  "let me right a test"; "you're right" and "the right file" stay), and
+  "cash" -> `cache` unless the words around it say money ("pay in cash",
+  "cash out", "petty cash").
 - `layout` (default true) turns spoken layout into lines, after
   `codeNotation`. "bullet sort, next bullet scan" -> `- Sort` and `- Scan`
   on their own lines ("bullet", "new bullet", "next bullet", "bullet
