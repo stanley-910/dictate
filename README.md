@@ -309,6 +309,16 @@ security delete-identity -c dictate-dev                                 # if you
   "let me right a test"; "you're right" and "the right file" stay), and
   "cash" -> `cache` unless the words around it say money ("pay in cash",
   "cash out", "petty cash").
+- `homophonePairs` adds your own sound-alike words, with no patterns to
+  write: `{ "heard": "sink", "meant": "sync", "near": ["data", "calendar",
+  "job"] }` changes "sink" only in a sentence that has one of the `near`
+  words; `{ "heard": "cue", "meant": "queue", "unless": ["actor", "stage"]
+  }` changes it always, except in a sentence with an `unless` word. With
+  neither it always changes; with both it needs a `near` word and no
+  `unless` word. Words match whole and in any case, a leading capital is
+  kept, and `heard` can be a phrase. Other forms ("sinks", "sinking") are
+  their own entries. These run before the built-in pair rules and whether
+  or not `homophones` is on.
 - `layout` (default true) turns spoken layout into lines, after
   `codeNotation`. "bullet sort, next bullet scan" -> `- Sort` and `- Scan`
   on their own lines ("bullet", "new bullet", "next bullet", "bullet

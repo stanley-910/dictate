@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import dictate
 
@@ -79,6 +80,36 @@ struct HomophonesTests {
     ])
     func leavesCash(_ said: String) {
         #expect(Homophones.apply(said) == said)
+    }
+
+    static let pairs = [
+        Config.HomophonePair(heard: "sink", meant: "sync", near: ["data", "calendar", "job"], unless: nil),
+        Config.HomophonePair(heard: "cue", meant: "queue", near: nil, unless: ["actor", "stage"]),
+        Config.HomophonePair(heard: "colonel", meant: "kernel", near: ["linux", "panic"], unless: ["army"]),
+        Config.HomophonePair(heard: "bite code", meant: "bytecode", near: nil, unless: nil),
+    ]
+
+    @Test(arguments: [
+        ("The job should sink the data.", "The job should sync the data."),
+        ("Wash it in the sink.", "Wash it in the sink."),
+        ("The sink is full. Run the job.", "The sink is full. Run the job."),
+        ("Sink my calendar.", "Sync my calendar."),
+        ("Put it on the cue.", "Put it on the queue."),
+        ("The actor missed the cue.", "The actor missed the cue."),
+        ("A Linux colonel panic.", "A Linux kernel panic."),
+        ("The army colonel uses Linux.", "The army colonel uses Linux."),
+        ("It emits bite code.", "It emits bytecode."),
+        ("The data is in sync, not the sinkhole.", "The data is in sync, not the sinkhole."),
+    ])
+    func usesConfigPairs(_ said: String, _ typed: String) {
+        #expect(Homophones.apply(said, pairs: Self.pairs) == typed)
+    }
+
+    @Test func configPairsDecode() throws {
+        let json = #"{"homophonePairs":[{"heard":"sink","meant":"sync","near":["data"]}]}"#
+        let c = try JSONDecoder().decode(Config.self, from: Data(json.utf8))
+        #expect(c.postProcess("Sink the data.") == "Sync the data.")
+        #expect(c.postProcess("The kitchen sink.") == "The kitchen sink.")
     }
 
     @Test func flagTurnsItOff() {

@@ -102,6 +102,9 @@ struct Config: Codable {
     /// "a dual right problem" -> "a dual write problem", "clear the cash" ->
     /// "clear the cache", from the words around them.
     var homophones: Bool = true
+    /// Your own sound-alike words: `heard` becomes `meant` when a `near`
+    /// word is in the sentence, and never when an `unless` word is.
+    var homophonePairs: [HomophonePair] = []
     /// Which copy each spoken "paste" inserts: "recent" (the newest first,
     /// then the one before) or "oldest" (the oldest of the last N copies
     /// first, for N commands).
@@ -188,6 +191,13 @@ struct Config: Codable {
         return .paste
     }
 
+    struct HomophonePair: Codable {
+        var heard: String
+        var meant: String
+        var near: [String]?
+        var unless: [String]?
+    }
+
     struct Replacement: Codable {
         var from: String
         var to: String
@@ -239,6 +249,7 @@ struct Config: Codable {
         layout = try c.decodeIfPresent(Bool.self, forKey: .layout) ?? d.layout
         units = try c.decodeIfPresent(Bool.self, forKey: .units) ?? d.units
         homophones = try c.decodeIfPresent(Bool.self, forKey: .homophones) ?? d.homophones
+        homophonePairs = try c.decodeIfPresent([HomophonePair].self, forKey: .homophonePairs) ?? d.homophonePairs
         pasteOrder = try c.decodeIfPresent(ClipboardHistory.Order.self, forKey: .pasteOrder) ?? d.pasteOrder
     }
 
@@ -287,6 +298,7 @@ struct Config: Codable {
         let text = ClipboardHistory.mark(casing == .lower ? raw.lowercased() : raw)
         let fixed = Dictionary.apply(text, terms: Dictionary.terms(dictionary), threshold: dictionaryThreshold)
         var out = Replacements.apply(fixed, rules: replacements)
+        out = Homophones.apply(out, pairs: homophonePairs)
         if homophones { out = Homophones.apply(out) }
         if codeNotation { out = CodeNotation.apply(out, spans: codeSpans) }
         if units { out = Units.apply(out) }

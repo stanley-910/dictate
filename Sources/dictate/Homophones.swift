@@ -12,6 +12,46 @@ enum Homophones {
         cash(write(text))
     }
 
+    /// The config's own pairs. `heard` (a word or phrase, any case) becomes
+    /// `meant`, keeping a leading capital, in each sentence that has one of
+    /// the `near` words (when there are any) and none of the `unless` words.
+    static func apply(_ text: String, pairs: [Config.HomophonePair]) -> String {
+        var out = text
+        for pair in pairs where !pair.heard.isEmpty {
+            guard let heard = word([pair.heard]) else { continue }
+            let near = pair.near.flatMap(word), unless = pair.unless.flatMap(word)
+            let matches = heard.matches(in: out, range: NSRange(out.startIndex..., in: out))
+            for match in matches.reversed() {
+                guard let range = Range(match.range, in: out) else { continue }
+                // The sentence without the word itself, so it is not its own cue.
+                let (start, end) = sentence(out, around: range)
+                let around = out[start..<range.lowerBound] + " " + out[range.upperBound..<end]
+                if let near, !has(near, around) { continue }
+                if let unless, has(unless, around) { continue }
+                var meant = pair.meant
+                if out[range].first?.isUppercase == true { meant = meant.prefix(1).uppercased() + meant.dropFirst() }
+                out.replaceSubrange(range, with: meant)
+            }
+        }
+        return out
+    }
+
+    /// Matches any of the words or phrases whole, in any case; nil for none.
+    private static func word(_ words: [String]) -> NSRegularExpression? {
+        let escaped = words.filter { !$0.isEmpty }.map(NSRegularExpression.escapedPattern(for:))
+        guard !escaped.isEmpty else { return nil }
+        return try? NSRegularExpression(pattern: "(?i)(?<!\\w)(?:" + escaped.joined(separator: "|") + ")(?!\\w)")
+    }
+
+    private static let ends: Set<Character> = [".", "!", "?", "\n"]
+
+    /// The sentence holding `range`, up to but not including its end mark.
+    private static func sentence(_ text: String, around range: Range<String.Index>) -> (String.Index, String.Index) {
+        let start = text[..<range.lowerBound].lastIndex(where: ends.contains).map(text.index(after:)) ?? text.startIndex
+        let end = text[range.upperBound...].firstIndex(where: ends.contains) ?? text.endIndex
+        return (start, end)
+    }
+
     private static let spelling = [
         "right": "write", "rights": "writes", "righting": "writing",
         "cash": "cache", "cashes": "caches", "cashed": "cached", "cashing": "caching",
@@ -110,13 +150,11 @@ enum Homophones {
         // "cashed out", "cashing a check" are money; "cached in memory" is not.
         var out = respell(text, #"\b(cashed|cashing|cashes)\b(?! (?:out|in on|in my|in your|in their|(?:it|them) in"#
             + #"|(?:a|the|my|your|that) (?:check|cheque)|checks|cheques)\b)(?! in\b(?! \w))"#)
-        let ends: Set<Character> = [".", "!", "?", "\n"]
         let matches = cashWord.matches(in: out, range: NSRange(out.startIndex..., in: out))
         for match in matches.reversed() {
             guard let range = Range(match.range, in: out) else { continue }
             let before = out[..<range.lowerBound], after = out[range.upperBound...]
-            let start = before.lastIndex(where: ends.contains).map(out.index(after:)) ?? out.startIndex
-            let end = after.firstIndex(where: ends.contains) ?? out.endIndex
+            let (start, end) = sentence(out, around: range)
             let word = out[range]
             let opens = out[start..<range.lowerBound].allSatisfy { $0.isWhitespace }
             // "Johnny Cash", "Cash App": a capital mid-sentence is a name.
